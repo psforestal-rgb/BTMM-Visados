@@ -49,7 +49,7 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 - Carga de polígono: SHP, GPKG, GPX, KML, KMZ, GeoJSON (con reproyección automática).
 - Intersección espacial y cuadro de superficies (ha y % del predio), solo clases > 0.01 ha.
 - Mini-mapas por capa, cada uno sobre su ortofoto del período correspondiente.
-- Capa de referencias transparente (topónimos, hidrografía, vías) con etiquetas
+- Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
 - Exportación a documento **Word** (.doc) con mapas y tablas.
 

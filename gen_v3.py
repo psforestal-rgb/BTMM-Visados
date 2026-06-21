@@ -14,8 +14,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-21-ref-labels-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-ref-labels-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-21-ref-stripes-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-ref-stripes-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -159,8 +159,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div id="panel-cobertura" class="tab-panel">
     <div class="pnl">
       <div class="pt">🧭 Referencias</div>
-      <label class="ltog"><input type="checkbox" id="cb-ref"><span style="flex:1">Nombres, ríos y caminos</span></label>
-      <div style="font-size:8px;color:#4a6e4c;padding:3px 4px 0;line-height:1.4">Capa de referencia transparente con etiquetas priorizadas sobre líneas de ríos, caminos y límites.</div>
+      <label class="ltog"><input type="checkbox" id="cb-ref"><span style="flex:1">Nombres, límites y caminos</span></label>
+      <div style="font-size:8px;color:#4a6e4c;padding:3px 4px 0;line-height:1.4">Capa de referencia transparente con etiquetas priorizadas sobre caminos y límites.</div>
       <div style="margin-top:5px"><div style="font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Opacidad referencias</div>
       <input type="range" id="ref-op" min="20" max="100" value="85" style="width:100%;accent-color:var(--acc2)">
       <div style="font-size:9px;color:var(--txt2);text-align:center"><span id="ref-opv">85</span>%</div></div>
@@ -352,7 +352,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script>
-const APP_VERSION='2026-06-21-ref-labels-v1';
+const APP_VERSION='2026-06-21-ref-stripes-v1';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -418,10 +418,10 @@ createRefPane('refLinePane',610);
 createRefPane('refLabelPane',660);
 
 /* ── CAPA DE REFERENCIAS (superposición transparente) ──
-   Los servicios de Esri son tiles ya renderizados. Para evitar líneas encima de
-   texto y etiquetas duplicadas, las líneas van en un pane inferior y los
-   topónimos/límites en un pane superior, con opacidad base diferenciada. */
-const TRANSPARENT_TILE='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+   Los servicios de Esri son tiles ya renderizados. Para evitar franjas y
+   líneas encima del texto, se usan solo overlays con alfa limpio: caminos en
+   un pane inferior y topónimos/límites en un pane superior. */
+const TRANSPARENT_TILE='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==';
 let refOpacity=0.85;
 const refTileDefaults={maxZoom:19,updateWhenIdle:true,keepBuffer:2,errorTileUrl:TRANSPARENT_TILE};
 function referenceTile(url,opts,baseOpacity){
@@ -432,8 +432,6 @@ function referenceTile(url,opts,baseOpacity){
 const refGroup=L.layerGroup([
   referenceTile('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
     {pane:'refLinePane',minZoom:13,attribution:'© Esri — Transportation'},0.42),
-  referenceTile('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Hydro_Reference_Overlay/MapServer/tile/{z}/{y}/{x}',
-    {pane:'refLinePane',minZoom:12,attribution:'© Esri — Hydro Reference'},0.62),
   referenceTile('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
     {pane:'refLabelPane',attribution:'© Esri — Boundaries and Places'},0.95)
 ]);
@@ -1552,7 +1550,7 @@ checks = {
     "Tarjeta Referencias": "🧭 Referencias" in HTML and 'id="cb-ref"' in HTML,
     "Capa base ELIMINADA": 'name="bm"' not in HTML and "🗺️ Capa base" not in HTML,
     "Panes de referencias separados": "createRefPane('refLinePane',610)" in HTML and "createRefPane('refLabelPane',660)" in HTML,
-    "Overlay transparente Esri (hidro/transporte/lugares)": "World_Hydro_Reference_Overlay" in HTML and "World_Transportation" in HTML and "World_Boundaries_and_Places" in HTML,
+    "Overlay transparente Esri (transporte/lugares)": "World_Hydro_Reference_Overlay" not in HTML and "World_Transportation" in HTML and "World_Boundaries_and_Places" in HTML,
     "Opacidad referencias por capa": 'id="ref-op"' in HTML and "function setRefOpacity" in HTML and "_refBaseOpacity" in HTML,
     "Tile transparente para 404": "TRANSPARENT_TILE" in HTML and "errorTileUrl" in HTML,
     "Datos resolucion completa (cf2021 ~1.1MB)": len(CF2021)//1024 > 900,
