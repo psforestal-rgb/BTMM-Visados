@@ -14,8 +14,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-21-pdf-plan-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-pdf-plan-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-21-pdf-autoalign-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-pdf-autoalign-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -262,15 +262,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div id="uli"><b id="uln"></b><br><span id="ulf"></span></div>
       <div style="margin:7px 0 5px;border-top:1px solid #28562b;padding-top:6px">
         <div style="font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Plano PDF</div>
-        <div style="display:flex;gap:5px;align-items:center">
-          <select id="pdf-buffer" title="Buffer para colocar el plano PDF" style="width:66px;background:#08200b;color:var(--txt);border:1px solid #28562b;border-radius:4px;padding:5px;font-size:10px">
-            <option value="5">5 m</option>
-            <option value="20" selected>20 m</option>
-            <option value="50">50 m</option>
-            <option value="100">100 m</option>
-          </select>
-          <button class="btn bp" id="btn-pdf-load" type="button" style="flex:1;width:auto;margin-top:0" onclick="document.getElementById('pdf-fi').click()">📄 Cargar PDF</button>
-        </div>
+        <button class="btn bp" id="btn-pdf-load" type="button" style="margin-top:0" onclick="document.getElementById('pdf-fi').click()">📄 Cargar PDF</button>
         <input type="file" id="pdf-fi" accept=".pdf" style="display:none">
         <label class="ltog" id="pdf-toggle-row" style="display:none;margin-top:5px">
           <input type="checkbox" id="cb-pdf-plan" checked><span style="flex:1">Mostrar plano PDF</span><span class="lbadge">ref</span>
@@ -355,7 +347,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
 <div id="stb">
   <span id="zi">Zoom: --</span>
-  <span id="ci" class="coo">Lat: -- | Lon: --</span>
+  <span id="ci" class="coo">CR05/CRTM05 E: -- | N: --</span>
   <span id="ls" style="color:var(--warn)"></span>
 </div>
 <div id="toast"></div>
@@ -371,7 +363,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-21-pdf-plan-v1';
+const APP_VERSION='2026-06-21-pdf-autoalign-v1';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -420,7 +412,7 @@ const LD={
 
 const S={lfl:{},gjd:{},uGJ:null,uLfl:null,op:0.75,
   lastResults:null,lastUserGeoJSON:null,lastBounds:null,lastUserHa:0,lastUserN:0,lastAerialDate:null,
-  pdfLayer:null,pdfBufferLayer:null,pdfName:null,pdfOpacity:0.72};
+  pdfLayer:null,pdfName:null,pdfOpacity:0.72};
 const miniMaps={};
 // Encuadre ajustado al predio para todos los mini-mapas (zoom al predio)
 const MM_FIT={padding:[12,12],maxZoom:17};
@@ -468,7 +460,10 @@ document.getElementById('ref-op').addEventListener('input',function(){
   setRefOpacity(this.value/100);
 });
 
-map.on('mousemove',e=>{document.getElementById('ci').textContent=`Lat: ${e.latlng.lat.toFixed(6)} | Lon: ${e.latlng.lng.toFixed(6)}`;});
+map.on('mousemove',e=>{
+  const p=proj4('EPSG:4326','EPSG:5367',[e.latlng.lng,e.latlng.lat]);
+  document.getElementById('ci').textContent=`CR05/CRTM05 E: ${p[0].toFixed(2)} | N: ${p[1].toFixed(2)}`;
+});
 map.on('zoomend',()=>{document.getElementById('zi').textContent=`Zoom: ${map.getZoom()}`;});
 document.getElementById('zi').textContent=`Zoom: ${map.getZoom()}`;
 
@@ -569,7 +564,6 @@ function restackLayers(){
   Object.keys(LM).forEach(k=>{if(S.lfl[k]&&map.hasLayer(S.lfl[k])&&S.lfl[k].bringToFront)S.lfl[k].bringToFront();});
   // el plano PDF queda como referencia sobre la cobertura, sin alterar el predio
   if(S.pdfLayer&&map.hasLayer(S.pdfLayer)&&S.pdfLayer.bringToFront)S.pdfLayer.bringToFront();
-  if(S.pdfBufferLayer&&map.hasLayer(S.pdfBufferLayer)&&S.pdfBufferLayer.bringToFront)S.pdfBufferLayer.bringToFront();
   // el polígono del usuario siempre arriba
   if(S.uLfl&&S.uLfl.bringToFront)S.uLfl.bringToFront();
 }
@@ -911,20 +905,6 @@ function clearUserLayer(){
   closeResults();
 }
 
-function getPdfBufferMeters(){
-  const el=document.getElementById('pdf-buffer');
-  const v=Number(el&&el.value)||20;
-  return [5,20,50,100].includes(v)?v:20;
-}
-
-function getBufferedUserBounds(meters){
-  if(!S.uGJ)throw new Error('Primero cargue el polígono del predio');
-  const buffered=turf.buffer(S.uGJ,meters,{units:'meters'});
-  if(!buffered)throw new Error('No se pudo calcular el buffer del predio');
-  const bbox=turf.bbox(buffered);
-  return {buffered,bounds:L.latLngBounds([bbox[1],bbox[0]],[bbox[3],bbox[2]])};
-}
-
 function makeWhiteTransparent(canvas,threshold=246){
   const ctx=canvas.getContext('2d',{willReadFrequently:true});
   const img=ctx.getImageData(0,0,canvas.width,canvas.height);
@@ -936,6 +916,118 @@ function makeWhiteTransparent(canvas,threshold=246){
   ctx.putImageData(img,0,0);
 }
 
+function collectGeomCoords(geom,out){
+  if(!geom)return out;
+  if(geom.type==='Polygon')geom.coordinates.forEach(r=>r.forEach(c=>out.push(c)));
+  else if(geom.type==='MultiPolygon')geom.coordinates.forEach(p=>p.forEach(r=>r.forEach(c=>out.push(c))));
+  else if(geom.type==='GeometryCollection')geom.geometries.forEach(g=>collectGeomCoords(g,out));
+  return out;
+}
+
+function userProjectedBBox(gj){
+  const coords=[];
+  (gj.features||[]).forEach(f=>collectGeomCoords(f.geometry,coords));
+  if(!coords.length)throw new Error('El polígono cargado no tiene coordenadas válidas');
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  coords.forEach(c=>{
+    const p=(Math.abs(c[0])>180||Math.abs(c[1])>90)?c:proj4('EPSG:4326','EPSG:5367',[c[0],c[1]]);
+    minX=Math.min(minX,p[0]);minY=Math.min(minY,p[1]);maxX=Math.max(maxX,p[0]);maxY=Math.max(maxY,p[1]);
+  });
+  const width=maxX-minX,height=maxY-minY;
+  if(width<=0||height<=0)throw new Error('No se pudo medir el polígono cargado');
+  return{minX,minY,maxX,maxY,width,height,ratio:width/height};
+}
+
+function getUserLatLngBounds(){
+  if(S.uLfl&&S.uLfl.getBounds)return S.uLfl.getBounds();
+  const b=turf.bbox(S.uGJ);
+  return L.latLngBounds([b[1],b[0]],[b[3],b[2]]);
+}
+
+function qSorted(a,q){
+  if(!a.length)return 0;
+  const p=(a.length-1)*q,lo=Math.floor(p),hi=Math.ceil(p);
+  if(lo===hi)return a[lo];
+  return a[lo]+(a[hi]-a[lo])*(p-lo);
+}
+
+function robustComponentBox(xs,ys,pad,w,h){
+  xs.sort((a,b)=>a-b);ys.sort((a,b)=>a-b);
+  const q=xs.length>800?0.005:0;
+  const x0=Math.floor(qSorted(xs,q))-pad;
+  const y0=Math.floor(qSorted(ys,q))-pad;
+  const x1=Math.ceil(qSorted(xs,1-q))+pad;
+  const y1=Math.ceil(qSorted(ys,1-q))+pad;
+  const x=Math.max(0,x0),y=Math.max(0,y0);
+  return{x,y,w:Math.min(w-1,x1)-x+1,h:Math.min(h-1,y1)-y+1};
+}
+
+function detectPdfPredioBox(canvas,userGeoJSON){
+  const target=userProjectedBBox(userGeoJSON);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  const w=canvas.width,h=canvas.height,total=w*h;
+  const data=ctx.getImageData(0,0,w,h).data;
+  const seen=new Uint8Array(total);
+  const stack=new Int32Array(total);
+  const minW=Math.max(30,w*0.08),minH=Math.max(30,h*0.12);
+  let best=null;
+  const isDark=idx=>{
+    const o=idx*4;
+    return data[o+3]>20&&data[o]<135&&data[o+1]<135&&data[o+2]<135;
+  };
+  for(let yy=0;yy<h;yy++){
+    for(let xx=0;xx<w;xx++){
+      const start=yy*w+xx;
+      if(seen[start]||!isDark(start)){seen[start]=1;continue;}
+      let top=0,area=0,minX=xx,maxX=xx,minY=yy,maxY=yy;
+      const xs=[],ys=[];
+      seen[start]=1;stack[top++]=start;
+      while(top){
+        const idx=stack[--top];
+        const y=(idx/w)|0,x=idx-y*w;
+        area++;xs.push(x);ys.push(y);
+        if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;
+        for(let dy=-1;dy<=1;dy++){
+          const ny=y+dy;if(ny<0||ny>=h)continue;
+          for(let dx=-1;dx<=1;dx++){
+            if(dx===0&&dy===0)continue;
+            const nx=x+dx;if(nx<0||nx>=w)continue;
+            const nidx=ny*w+nx;
+            if(!seen[nidx]){
+              seen[nidx]=1;
+              if(isDark(nidx))stack[top++]=nidx;
+            }
+          }
+        }
+      }
+      const rawW=maxX-minX+1,rawH=maxY-minY+1;
+      if(area<120||rawW<minW||rawH<minH)continue;
+      if(minX<5||minY<5||maxX>w-6||maxY>h-6)continue;
+      if(rawW>w*0.78||rawH>h*0.78)continue;
+      const pad=Math.max(4,Math.round(Math.min(w,h)*0.004));
+      const box=robustComponentBox(xs,ys,pad,w,h);
+      if(box.w<minW||box.h<minH)continue;
+      const ratio=box.w/box.h;
+      const ratioErr=Math.abs(Math.log(ratio/target.ratio));
+      if(ratioErr>0.55)continue;
+      const boxFrac=(box.w*box.h)/total;
+      const score=ratioErr*4-Math.log(area)/9-boxFrac;
+      if(!best||score<best.score)best={score,box,area,ratio,ratioErr,targetRatio:target.ratio};
+    }
+  }
+  if(!best)throw new Error('No se pudo identificar un contorno del predio compatible con el polígono cargado');
+  return best;
+}
+
+function cropPdfToDetectedPredio(canvas,detected){
+  const b=detected.box;
+  const out=document.createElement('canvas');
+  out.width=b.w;out.height=b.h;
+  out.getContext('2d',{willReadFrequently:true}).drawImage(canvas,b.x,b.y,b.w,b.h,0,0,b.w,b.h);
+  makeWhiteTransparent(out);
+  return out;
+}
+
 async function renderPdfFirstPage(file){
   if(!window.pdfjsLib)throw new Error('No se pudo cargar PDF.js');
   if(pdfjsLib.GlobalWorkerOptions){
@@ -945,15 +1037,14 @@ async function renderPdfFirstPage(file){
   if(!pdf.numPages)throw new Error('PDF sin páginas');
   const page=await pdf.getPage(1);
   const vp0=page.getViewport({scale:1});
-  const scale=Math.min(2.2,Math.max(1.2,1400/Math.max(vp0.width,vp0.height)));
+  const scale=Math.min(2.4,Math.max(1.5,1800/Math.max(vp0.width,vp0.height)));
   const viewport=page.getViewport({scale});
   const canvas=document.createElement('canvas');
   canvas.width=Math.ceil(viewport.width);
   canvas.height=Math.ceil(viewport.height);
   const ctx=canvas.getContext('2d',{willReadFrequently:true});
   await page.render({canvasContext:ctx,viewport}).promise;
-  makeWhiteTransparent(canvas);
-  const result={url:canvas.toDataURL('image/png'),pages:pdf.numPages,width:canvas.width,height:canvas.height};
+  const result={canvas,pages:pdf.numPages,width:canvas.width,height:canvas.height};
   try{await pdf.destroy();}catch(e){}
   return result;
 }
@@ -963,21 +1054,22 @@ async function handlePdfPlanUpload(file){
   if(!S.uGJ){toast('Primero cargue el polígono del predio',true,5000);document.getElementById('pdf-fi').value='';return;}
   showProg(true);setProg(15,'Leyendo PDF del plano…');
   try{
-    const meters=getPdfBufferMeters();
-    const {buffered,bounds}=getBufferedUserBounds(meters);
-    setProg(45,'Renderizando primera página…');
+    const bounds=getUserLatLngBounds();
+    setProg(35,'Renderizando primera página…');
     const rendered=await renderPdfFirstPage(file);
-    setProg(75,'Colocando plano sobre el mapa…');
+    setProg(60,'Detectando contorno del predio…');
+    const detected=detectPdfPredioBox(rendered.canvas,S.uGJ);
+    const crop=cropPdfToDetectedPredio(rendered.canvas,detected);
+    setProg(82,'Georreferenciando recorte del plano…');
     clearPdfPlanLayer();
-    S.pdfLayer=L.imageOverlay(rendered.url,bounds,{opacity:S.pdfOpacity,interactive:false}).addTo(map);
-    S.pdfBufferLayer=L.geoJSON(buffered,{style:{color:'#e74c3c',weight:2,dashArray:'6 4',fill:false,opacity:0.9},interactive:false}).addTo(map);
+    S.pdfLayer=L.imageOverlay(crop.toDataURL('image/png'),bounds,{opacity:S.pdfOpacity,interactive:false}).addTo(map);
     S.pdfName=file.name;
     document.getElementById('pdf-toggle-row').style.display='flex';
     document.getElementById('btn-pdf-clear').style.display='block';
     document.getElementById('cb-pdf-plan').checked=true;
     const info=document.getElementById('pdf-info');
     info.style.display='block';
-    info.textContent=`${file.name} · página 1/${rendered.pages} · buffer ${meters} m · capa referencial`;
+    info.textContent=`${file.name} · página 1/${rendered.pages} · contorno detectado · capa referencial`;
     map.fitBounds(bounds,{padding:[25,25]});
     restackLayers();
     setProg(100,'Plano PDF cargado');
@@ -993,17 +1085,14 @@ async function handlePdfPlanUpload(file){
 }
 
 function togglePdfPlan(on){
-  [S.pdfLayer,S.pdfBufferLayer].forEach(l=>{
-    if(!l)return;
-    if(on){if(!map.hasLayer(l))l.addTo(map);}
-    else if(map.hasLayer(l))map.removeLayer(l);
-  });
+  if(!S.pdfLayer)return;
+  if(on){if(!map.hasLayer(S.pdfLayer))S.pdfLayer.addTo(map);}
+  else if(map.hasLayer(S.pdfLayer))map.removeLayer(S.pdfLayer);
   if(on)restackLayers();
 }
 
 function clearPdfPlanLayer(){
   if(S.pdfLayer){map.removeLayer(S.pdfLayer);S.pdfLayer=null;}
-  if(S.pdfBufferLayer){map.removeLayer(S.pdfBufferLayer);S.pdfBufferLayer=null;}
   S.pdfName=null;
   const row=document.getElementById('pdf-toggle-row');if(row)row.style.display='none';
   const btn=document.getElementById('btn-pdf-clear');if(btn)btn.style.display='none';
@@ -1668,8 +1757,9 @@ checks = {
     "Version cache-buster": "APP_VERSION" in HTML and "version.json" in HTML,
     "Favicon": "favicon.ico" in HTML,
     "Plano PDF referencial": 'id="pdf-fi"' in HTML and "function handlePdfPlanUpload" in HTML and "pdfjsLib" in HTML,
-    "Buffer PDF configurable": 'id="pdf-buffer"' in HTML and "getBufferedUserBounds" in HTML and "turf.buffer" in HTML,
+    "Detector contorno PDF": "function detectPdfPredioBox" in HTML and "cropPdfToDetectedPredio" in HTML and "contorno detectado" in HTML,
     "Toggle Plano PDF": 'id="cb-pdf-plan"' in HTML and "function togglePdfPlan" in HTML,
+    "Coordenadas CRTM05 en barra": "CR05/CRTM05 E:" in HTML and "EPSG:5367" in HTML,
     "Esri Wayback": "wayback.maptiles.arcgis.com" in HTML,
     "Emparejamiento PAIR": "const PAIR=" in HTML,
     "Descubrimiento runtime": "function discoverImageryConfig" in HTML,
