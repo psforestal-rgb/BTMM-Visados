@@ -9,8 +9,7 @@ proyección CRTM05 / EPSG:5367** (coincidente con QGIS).
 
 ## Acceso
 
-- **Visor en línea:** https://USUARIO.github.io/BTMM-Visados/
-  (reemplazar `USUARIO` por el usuario/organización de GitHub una vez publicado)
+- **Visor en línea:** https://psforestal-rgb.github.io/BTMM-Visados/
 - También funciona como archivo único abierto localmente (`index.html`).
 
 ## Capas de cobertura (orden cronológico)
@@ -28,7 +27,7 @@ Los datos se embeben en el HTML comprimidos (gzip + base64), a resolución compl
 
 ## Imágenes aéreas
 
-Tarjeta "Imágenes aéreas" con ortofotos SNIT-IGN vía WMS/WMTS. Las capas WMS se
+Tarjeta "Imágenes aéreas" con ortofotos SNIT-IGN vía WMS/WMTS. Las capas SNIT se
 enrutan por un proxy OGC (Cloudflare Worker) que añade CORS y caché:
 
 - Ortofoto TERRA 1997 — WMTS SNIT-IGN
@@ -37,6 +36,13 @@ enrutan por un proxy OGC (Cloudflare Worker) que añade CORS y caché:
 - Imagen aérea 2021 / 2023 — Esri World Imagery (Wayback)
 
 > Las ortofotos del SNIT son de escala 1:5000: se deben ver acercando el zoom.
+
+## Actualización y caché
+
+El visor consulta `version.json` con `cache: "no-store"` y agrega `?v=<version>` a
+la URL cuando detecta una versión nueva. Para forzar una actualización publicada,
+actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
+`index.html` / `gen_v3.py`.
 
 ## Funciones
 
@@ -51,6 +57,8 @@ enrutan por un proxy OGC (Cloudflare Worker) que añade CORS y caché:
 ```
 index.html      Visor completo y autónomo (datos embebidos)
 gen_v3.py       Pipeline Python que genera index.html a partir de los GPKG
+version.json    Versión publicada para forzar actualización del navegador
+favicon.ico     Icono del sitio
 README.md       Este archivo
 .gitignore
 ```

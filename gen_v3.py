@@ -10,7 +10,12 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
+<link rel="icon" href="favicon.ico?v=2026-06-21-cors-wmts-cache-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-cors-wmts-cache-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -347,6 +352,25 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script>
+const APP_VERSION='2026-06-21-cors-wmts-cache-v1';
+window.BTMM_APP_VERSION=APP_VERSION;
+(function enforceFreshVersion(){
+  if(location.protocol==='file:') return;
+  fetch('version.json?ts='+Date.now(),{cache:'no-store'})
+    .then(r=>r.ok?r.json():null)
+    .then(info=>{
+      const remote=info&&info.version;
+      if(!remote) return;
+      const u=new URL(location.href);
+      if(u.searchParams.get('v')===remote) return;
+      const key='btmm-visados-reloaded-'+remote;
+      if(sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key,'1');
+      u.searchParams.set('v',remote);
+      location.replace(u.toString());
+    })
+    .catch(()=>{});
+})();
 proj4.defs("EPSG:5367","+proj=tmerc +lat_0=0 +lon_0=-84 +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
 proj4.defs("EPSG:8908","+proj=tmerc +lat_0=0 +lon_0=-84 +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
 proj4.defs("EPSG:32616","+proj=utm +zone=16 +datum=WGS84 +units=m +no_defs");
@@ -474,6 +498,13 @@ const ProxiedWMS=L.TileLayer.WMS.extend({
   }
 });
 function proxiedWms(url,options){ return new ProxiedWMS(url,options); }
+const ProxiedTileLayer=L.TileLayer.extend({
+  getTileUrl:function(coords){
+    const real=L.TileLayer.prototype.getTileUrl.call(this,coords);
+    return viaProxy(real);
+  }
+});
+function proxiedTile(url,options){ return new ProxiedTileLayer(url,options); }
 
 function buildOrthoLayer(key,opts){
   const c=ORTHO[key];
@@ -490,8 +521,10 @@ function buildOrthoLayer(key,opts){
     // Por defecto se usa el proxy (CORS + caché). opts.direct=true lo evita.
     lyr=opts.direct ? L.tileLayer.wms(c.url, params) : proxiedWms(c.url, params);
   } else if(c.type==='wmts'){
-    lyr=L.tileLayer(c.url,{opacity:op, crossOrigin:opts.crossOrigin||'anonymous',
-      maxNativeZoom:20, maxZoom:opts.maxZoom||21, attribution:c.attribution});
+    const tileOpts={opacity:op, crossOrigin:opts.crossOrigin||'anonymous',
+      maxNativeZoom:20, maxZoom:opts.maxZoom||21, attribution:c.attribution};
+    // El WMTS de TERRA 1997 no publica CORS; por defecto pasa por el proxy OGC.
+    lyr=opts.direct ? L.tileLayer(c.url,tileOpts) : proxiedTile(c.url,tileOpts);
   } else { // xyz (Esri Wayback) — over-zoom para permitir acercamiento igual al 2023
     const url=WB_BASE.replace('{rel}', c.rel);
     lyr=L.tileLayer(url,{opacity:op, crossOrigin:opts.crossOrigin||null,
@@ -1496,6 +1529,9 @@ checks = {
     "Ortofoto 2005-2007 (Mosaico5000)": "Mosaico5000" in HTML,
     "Ortofoto 2014-2017 (mosaico alta resolucion)": "ortofoto2017_5000_altaresolucion" in HTML,
     "TERRA 1997 WMTS": "Ortofoto_TERRA_1997_40k/wmts" in HTML and "REQUEST=GetTile" in HTML,
+    "WMTS proxy para TERRA 1997": "function proxiedTile" in HTML and "ProxiedTileLayer" in HTML,
+    "Version cache-buster": "APP_VERSION" in HTML and "version.json" in HTML,
+    "Favicon": "favicon.ico" in HTML,
     "Esri Wayback": "wayback.maptiles.arcgis.com" in HTML,
     "Emparejamiento PAIR": "const PAIR=" in HTML,
     "Descubrimiento runtime": "function discoverImageryConfig" in HTML,
