@@ -420,12 +420,11 @@ map.on('mousemove',e=>{document.getElementById('ci').textContent=`Lat: ${e.latln
 map.on('zoomend',()=>{document.getElementById('zi').textContent=`Zoom: ${map.getZoom()}`;});
 document.getElementById('zi').textContent=`Zoom: ${map.getZoom()}`;
 
-/* ════════════════════════════════════════════════════════════════════════
-   IMÁGENES AÉREAS (ortofotos SNIT-IGN vía WMS + Esri Wayback 2021/2023)
-   - Las ortofotos SNIT se sirven como WMS (el servidor reproyecta a EPSG:3857).
-   - TERRA 1997 y la versión Wayback 2021 se autoconfiguran en tiempo de
-     ejecución (nombre de capa / número de versión) con respaldo si falla.
-   ════════════════════════════════════════════════════════════════════════ */
+/*
+   IMAGENES AEREAS (ortofotos SNIT-IGN via WMS/WMTS + Esri Wayback 2021/2023)
+   - Las ortofotos SNIT se sirven como WMS o WMTS en EPSG:3857.
+   - Esri Wayback 2021/2023 se autoconfigura en tiempo de ejecucion con respaldo si falla.
+*/
 const WB_BASE='https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/{rel}/{z}/{y}/{x}';
 
 // Proxy OGC (Cloudflare Worker) — añade CORS y caché a los servicios SNIT.
@@ -445,9 +444,10 @@ const ORTHO={
     attribution:'IGN / SNIT — Ortofoto 2005-2007 (PRCR)'},
   orto1417:{name:'Ortofoto 2014-2017',short:'Ortofoto 2014-2017',type:'wms',
     url:'https://geos1.snitcr.go.cr/Ortofoto2017/wms',
-    layers:'fotocentros_ortofoto_2017_5000',version:'1.1.1',
+    layers:'ortofoto2017_5000_altaresolucion',version:'1.1.1',
     capsUrl:'https://geos1.snitcr.go.cr/Ortofoto2017/wms?service=WMS&version=1.1.1&request=GetCapabilities',
-    attribution:'IGN / SNIT — Ortofoto 2014-2017'},
+    discoverLayer:false,
+    attribution:'IGN / SNIT - Ortofoto 2014-2017'},
   wb2021:{name:'Imagen aérea 2021 (Esri)',short:'Imagen aérea 2021 (Esri)',type:'xyz',
     rel:'13851',rel_fallback:'13851',discover:'2021',
     attribution:'Esri World Imagery (Wayback 2021)'},
@@ -546,7 +546,7 @@ document.getElementById('ortho-op').addEventListener('input',function(){
   Object.values(orthoLayers).forEach(l=>{if(l&&l.setOpacity)l.setOpacity(orthoOpacity);});
 });
 
-/* ── Descubrimiento en tiempo de ejecución (capa TERRA 1997 + 2014-2017 + versión Wayback 2021) ── */
+/* -- Descubrimiento en tiempo de ejecucion (capas WMS heredadas + Esri Wayback) -- */
 function firstLeafLayerName(xml){
   // Devuelve el Name de la primera "Layer" hoja (sin sub-Layer) — robusto ante anidamiento
   const layers=Array.from(xml.getElementsByTagName('Layer'));
@@ -590,7 +590,7 @@ async function discoverImageryConfig(){
       if(p23){ORTHO.wb2023.rel=p23.rel;ORTHO.wb2023.attribution='Esri World Imagery (Wayback '+p23.label+')';ORTHO.wb2023.dateLabel=p23.label;}
     }
   }catch(e){console.warn('Wayback config:',e);}
-  // 2) Nombres de capa GeoServer (TERRA 1997 y 2014-2017)
+  // 2) Nombres de capa GeoServer cuando una ortofoto WMS no fija su capa manualmente
   await Promise.all([discoverWmsLayer('terra1997'), discoverWmsLayer('orto1417')]);
 }
 
@@ -1178,7 +1178,7 @@ function closeResults(){
    Captura cada mapa componiendo las teselas Esri + dibujando los polígonos
    sobre un canvas (sin librerías externas), y arma un documento Word (.doc)
    con imágenes embebidas y las tablas estadísticas.
-   ════════════════════════════════════════════════════════════════════════ */
+*/
 
 /* Proyección lng/lat → píxel del canvas usando el mapa temporal */
 function _projPt(m,lng,lat,scale){const p=m.latLngToContainerPoint([lat,lng]);return [p.x*scale,p.y*scale];}
@@ -1494,8 +1494,8 @@ checks = {
     "Tarjeta Imágenes aéreas": "Imágenes aéreas" in HTML,
     "Config ORTHO": "const ORTHO=" in HTML,
     "Ortofoto 2005-2007 (Mosaico5000)": "Mosaico5000" in HTML,
-    "Ortofoto 2014-2017 (fotocentros)": "fotocentros_ortofoto_2017_5000" in HTML,
-    "TERRA 1997 WMS": "Ortofoto_TERRA_1997_40k/wms" in HTML,
+    "Ortofoto 2014-2017 (mosaico alta resolucion)": "ortofoto2017_5000_altaresolucion" in HTML,
+    "TERRA 1997 WMTS": "Ortofoto_TERRA_1997_40k/wmts" in HTML and "REQUEST=GetTile" in HTML,
     "Esri Wayback": "wayback.maptiles.arcgis.com" in HTML,
     "Emparejamiento PAIR": "const PAIR=" in HTML,
     "Descubrimiento runtime": "function discoverImageryConfig" in HTML,
@@ -1516,7 +1516,7 @@ checks = {
     "Wayback over-zoom (maxNativeZoom 19)": "maxNativeZoom:19" in HTML,
     "Mapa maxZoom 20": "zoom:11,maxZoom:20" in HTML,
     "Discovery robusto (leaf layer)": "function firstLeafLayerName" in HTML,
-    "Discovery 2014-2017 (capsUrl)": "Ortofoto2017/wms?service=WMS" in HTML,
+    "Ortofoto 2014-2017 discovery desactivado": "discoverLayer:false" in HTML and "ortofoto2017_5000_altaresolucion" in HTML,
     "Estado por capa (todas)": "st-orto1417" in HTML and "st-wb2021" in HTML,
     "Proxy OGC configurado": "psforgis-ocg.psforestal.workers.dev/ogc?u=" in HTML,
     "ProxiedWMS (teselas via proxy)": "const ProxiedWMS=L.TileLayer.WMS.extend" in HTML,

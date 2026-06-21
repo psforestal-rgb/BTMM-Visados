@@ -28,12 +28,12 @@ Los datos se embeben en el HTML comprimidos (gzip + base64), a resolución compl
 
 ## Imágenes aéreas
 
-Tarjeta "Imágenes aéreas" con ortofotos enrutadas por un proxy OGC (Cloudflare Worker)
-que añade CORS y caché:
+Tarjeta "Imágenes aéreas" con ortofotos SNIT-IGN vía WMS/WMTS. Las capas WMS se
+enrutan por un proxy OGC (Cloudflare Worker) que añade CORS y caché:
 
-- Ortofoto TERRA 1997 — WMS SNIT-IGN
+- Ortofoto TERRA 1997 — WMTS SNIT-IGN
 - Ortofoto 2005-2007 — WMS SNIT-IGN (`Mosaico5000`)
-- Ortofoto 2014-2017 — WMS SNIT-IGN (`fotocentros_ortofoto_2017_5000`)
+- Ortofoto 2014-2017 — WMS SNIT-IGN (`ortofoto2017_5000_altaresolucion`)
 - Imagen aérea 2021 / 2023 — Esri World Imagery (Wayback)
 
 > Las ortofotos del SNIT son de escala 1:5000: se deben ver acercando el zoom.
