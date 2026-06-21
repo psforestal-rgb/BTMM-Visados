@@ -14,8 +14,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-21-cors-wmts-cache-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-cors-wmts-cache-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-21-ref-labels-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-ref-labels-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -160,10 +160,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="pnl">
       <div class="pt">🧭 Referencias</div>
       <label class="ltog"><input type="checkbox" id="cb-ref"><span style="flex:1">Nombres, ríos y caminos</span></label>
-      <div style="font-size:8px;color:#4a6e4c;padding:3px 4px 0;line-height:1.4">Capa de referencia transparente que se dibuja sobre todo (topónimos, hidrografía, vías y límites) sin tapar la cobertura del suelo.</div>
+      <div style="font-size:8px;color:#4a6e4c;padding:3px 4px 0;line-height:1.4">Capa de referencia transparente con etiquetas priorizadas sobre líneas de ríos, caminos y límites.</div>
       <div style="margin-top:5px"><div style="font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Opacidad referencias</div>
-      <input type="range" id="ref-op" min="20" max="100" value="100" style="width:100%;accent-color:var(--acc2)">
-      <div style="font-size:9px;color:var(--txt2);text-align:center"><span id="ref-opv">100</span>%</div></div>
+      <input type="range" id="ref-op" min="20" max="100" value="85" style="width:100%;accent-color:var(--acc2)">
+      <div style="font-size:9px;color:var(--txt2);text-align:center"><span id="ref-opv">85</span>%</div></div>
     </div>
     <div class="pnl">
       <div class="pt">🌿 Capas de cobertura</div>
@@ -352,7 +352,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script>
-const APP_VERSION='2026-06-21-cors-wmts-cache-v1';
+const APP_VERSION='2026-06-21-ref-labels-v1';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -408,28 +408,38 @@ const MM_FIT={padding:[12,12],maxZoom:17};
 /* ── MAP SETUP ── */
 const map=L.map('mc',{center:[9.58,-83.85],zoom:11,maxZoom:20});
 
-// Panel dedicado para las referencias: z-index alto para quedar SOBRE todo
-// (cobertura, ortofotos y polígono), sin capturar eventos del ratón.
-map.createPane('refPane');
-map.getPane('refPane').style.zIndex=650;
-map.getPane('refPane').style.pointerEvents='none';
+function createRefPane(name,zIndex){
+  map.createPane(name);
+  const pane=map.getPane(name);
+  pane.style.zIndex=zIndex;
+  pane.style.pointerEvents='none';
+}
+createRefPane('refLinePane',610);
+createRefPane('refLabelPane',660);
 
 /* ── CAPA DE REFERENCIAS (superposición transparente) ──
-   LayerGroup de overlays transparentes de Esri (PNG con alfa) que muestran,
-   sin fondo, hidrografía (ríos), transporte (caminos/vías) y topónimos/límites.
-   Al ser transparentes, no alteran la lectura de la cobertura del suelo. */
-let refOpacity=1.0;
+   Los servicios de Esri son tiles ya renderizados. Para evitar líneas encima de
+   texto y etiquetas duplicadas, las líneas van en un pane inferior y los
+   topónimos/límites en un pane superior, con opacidad base diferenciada. */
+const TRANSPARENT_TILE='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+let refOpacity=0.85;
+const refTileDefaults={maxZoom:19,updateWhenIdle:true,keepBuffer:2,errorTileUrl:TRANSPARENT_TILE};
+function referenceTile(url,opts,baseOpacity){
+  const layer=L.tileLayer(url,Object.assign({},refTileDefaults,opts,{opacity:baseOpacity}));
+  layer._refBaseOpacity=baseOpacity;
+  return layer;
+}
 const refGroup=L.layerGroup([
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Hydro_Reference_Overlay/MapServer/tile/{z}/{y}/{x}',
-    {pane:'refPane',opacity:1,maxZoom:19,attribution:'© Esri — Hydro Reference'}),
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
-    {pane:'refPane',opacity:1,maxZoom:19,attribution:'© Esri — Transportation'}),
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-    {pane:'refPane',opacity:1,maxZoom:19,attribution:'© Esri — Boundaries and Places'})
+  referenceTile('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+    {pane:'refLinePane',minZoom:13,attribution:'© Esri — Transportation'},0.42),
+  referenceTile('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Hydro_Reference_Overlay/MapServer/tile/{z}/{y}/{x}',
+    {pane:'refLinePane',minZoom:12,attribution:'© Esri — Hydro Reference'},0.62),
+  referenceTile('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    {pane:'refLabelPane',attribution:'© Esri — Boundaries and Places'},0.95)
 ]);
 function setRefOpacity(v){
-  refOpacity=v;
-  refGroup.eachLayer(l=>{if(l.setOpacity)l.setOpacity(v);});
+  refOpacity=Number(v)||0;
+  refGroup.eachLayer(l=>{if(l.setOpacity)l.setOpacity(refOpacity*(l._refBaseOpacity||1));});
 }
 document.getElementById('cb-ref').addEventListener('change',function(){
   if(this.checked){refGroup.addTo(map);setRefOpacity(refOpacity);toast('🧭 Referencias activadas');}
@@ -1541,9 +1551,10 @@ checks = {
     "Opacidad ortofoto": 'id="ortho-op"' in HTML,
     "Tarjeta Referencias": "🧭 Referencias" in HTML and 'id="cb-ref"' in HTML,
     "Capa base ELIMINADA": 'name="bm"' not in HTML and "🗺️ Capa base" not in HTML,
-    "Pane refPane z-index alto": "createPane('refPane')" in HTML and "zIndex=650" in HTML,
+    "Panes de referencias separados": "createRefPane('refLinePane',610)" in HTML and "createRefPane('refLabelPane',660)" in HTML,
     "Overlay transparente Esri (hidro/transporte/lugares)": "World_Hydro_Reference_Overlay" in HTML and "World_Transportation" in HTML and "World_Boundaries_and_Places" in HTML,
-    "Opacidad referencias": 'id="ref-op"' in HTML and "function setRefOpacity" in HTML,
+    "Opacidad referencias por capa": 'id="ref-op"' in HTML and "function setRefOpacity" in HTML and "_refBaseOpacity" in HTML,
+    "Tile transparente para 404": "TRANSPARENT_TILE" in HTML and "errorTileUrl" in HTML,
     "Datos resolucion completa (cf2021 ~1.1MB)": len(CF2021)//1024 > 900,
     "FONAFIFO 2005 nueva (1344 feats)": len(json.loads(__import__('gzip').decompress(__import__('base64').b64decode(FN2005)).decode())['features'])==1344,
     "Nota ajuste fn2005 (constante)": "const FN2005_NOTE=" in HTML,
