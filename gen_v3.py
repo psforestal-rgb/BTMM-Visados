@@ -434,11 +434,11 @@ const WB_BASE='https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Im
 const OGC_PROXY='https://psforgis-ocg.psforestal.workers.dev/ogc?u=';
 function viaProxy(u){ return OGC_PROXY+encodeURIComponent(u); }
 const ORTHO={
-  terra1997:{name:'Ortofoto TERRA 1997',short:'TERRA 1997',type:'wms',
-    url:'https://geos1.snitcr.go.cr/Ortofoto_TERRA_1997_40k/wms',
-    layers:'Ortofoto_TERRA_1997_40k',version:'1.1.1',
-    capsUrl:'https://geos1.snitcr.go.cr/Ortofoto_TERRA_1997_40k/wms?service=WMS&version=1.1.1&request=GetCapabilities',
-    attribution:'IGN / SNIT — Ortofoto TERRA 1997'},
+  terra1997:{name:'Ortofoto TERRA 1997',short:'TERRA 1997',type:'wmts',
+    url:'https://geos1.snitcr.go.cr/Ortofoto_TERRA_1997_40k/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=mosaico_ortofoto_terra_1997_40k&STYLE=_empty&FORMAT=image/png&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:{z}&TILEROW={y}&TILECOL={x}',
+    capsUrl:'https://geos1.snitcr.go.cr/Ortofoto_TERRA_1997_40k/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetCapabilities',
+    discoverLayer:false,
+    attribution:'IGN / SNIT - Ortofotos TERRA 1997'},
   orto0507:{name:'Ortofoto 2005-2007',short:'Ortofoto 2005-2007',type:'wms',
     url:'https://geos0.snitcr.go.cr/cgi-bin/web',
     layers:'Mosaico5000',version:'1.1.1',extraParams:{map:'ortofoto.map'},
@@ -489,6 +489,9 @@ function buildOrthoLayer(key,opts){
     }, c.extraParams||{});
     // Por defecto se usa el proxy (CORS + caché). opts.direct=true lo evita.
     lyr=opts.direct ? L.tileLayer.wms(c.url, params) : proxiedWms(c.url, params);
+  } else if(c.type==='wmts'){
+    lyr=L.tileLayer(c.url,{opacity:op, crossOrigin:opts.crossOrigin||'anonymous',
+      maxNativeZoom:20, maxZoom:opts.maxZoom||21, attribution:c.attribution});
   } else { // xyz (Esri Wayback) — over-zoom para permitir acercamiento igual al 2023
     const url=WB_BASE.replace('{rel}', c.rel);
     lyr=L.tileLayer(url,{opacity:op, crossOrigin:opts.crossOrigin||null,
@@ -559,6 +562,7 @@ function firstLeafLayerName(xml){
 async function discoverWmsLayer(key){
   const c=ORTHO[key];
   if(!c||!c.capsUrl)return;
+  if(c.discoverLayer===false)return;
   try{
     const r=await fetch(viaProxy(c.capsUrl),{cache:'force-cache'});
     if(!r.ok)return;
