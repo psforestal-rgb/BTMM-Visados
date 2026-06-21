@@ -14,8 +14,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-21-ref-stripes-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-ref-stripes-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-21-pdf-plan-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-pdf-plan-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -260,6 +260,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       </div>
       <input type="file" id="fi" accept=".shp,.gpkg,.gpx,.kml,.kmz,.geojson,.json,.zip">
       <div id="uli"><b id="uln"></b><br><span id="ulf"></span></div>
+      <div style="margin:7px 0 5px;border-top:1px solid #28562b;padding-top:6px">
+        <div style="font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Plano PDF</div>
+        <div style="display:flex;gap:5px;align-items:center">
+          <select id="pdf-buffer" title="Buffer para colocar el plano PDF" style="width:66px;background:#08200b;color:var(--txt);border:1px solid #28562b;border-radius:4px;padding:5px;font-size:10px">
+            <option value="5">5 m</option>
+            <option value="20" selected>20 m</option>
+            <option value="50">50 m</option>
+            <option value="100">100 m</option>
+          </select>
+          <button class="btn bp" id="btn-pdf-load" type="button" style="flex:1;width:auto;margin-top:0" onclick="document.getElementById('pdf-fi').click()">📄 Cargar PDF</button>
+        </div>
+        <input type="file" id="pdf-fi" accept=".pdf" style="display:none">
+        <label class="ltog" id="pdf-toggle-row" style="display:none;margin-top:5px">
+          <input type="checkbox" id="cb-pdf-plan" checked><span style="flex:1">Mostrar plano PDF</span><span class="lbadge">ref</span>
+        </label>
+        <button class="btn bd" id="btn-pdf-clear" style="display:none" onclick="clearPdfPlanLayer()">✖ Limpiar PDF</button>
+        <div id="pdf-info" style="display:none;font-size:8px;color:#9bc99a;line-height:1.35;margin-top:4px"></div>
+      </div>
       <button class="btn bp" id="btn-analyze" disabled onclick="runAnalysis()">🔬 Calcular intersección</button>
       <button class="btn bd" id="btn-clear" style="display:none" onclick="clearUserLayer()">✖ Limpiar capa</button>
     </div>
@@ -351,8 +369,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdn.jsdelivr.net/npm/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-21-ref-stripes-v1';
+const APP_VERSION='2026-06-21-pdf-plan-v1';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -400,7 +419,8 @@ const LD={
 };
 
 const S={lfl:{},gjd:{},uGJ:null,uLfl:null,op:0.75,
-  lastResults:null,lastUserGeoJSON:null,lastBounds:null,lastUserHa:0,lastUserN:0,lastAerialDate:null};
+  lastResults:null,lastUserGeoJSON:null,lastBounds:null,lastUserHa:0,lastUserN:0,lastAerialDate:null,
+  pdfLayer:null,pdfBufferLayer:null,pdfName:null,pdfOpacity:0.72};
 const miniMaps={};
 // Encuadre ajustado al predio para todos los mini-mapas (zoom al predio)
 const MM_FIT={padding:[12,12],maxZoom:17};
@@ -547,6 +567,9 @@ function restackLayers(){
   Object.values(orthoLayers).forEach(l=>{if(l&&l.bringToBack)l.bringToBack();});
   // luego las capas de cobertura por encima
   Object.keys(LM).forEach(k=>{if(S.lfl[k]&&map.hasLayer(S.lfl[k])&&S.lfl[k].bringToFront)S.lfl[k].bringToFront();});
+  // el plano PDF queda como referencia sobre la cobertura, sin alterar el predio
+  if(S.pdfLayer&&map.hasLayer(S.pdfLayer)&&S.pdfLayer.bringToFront)S.pdfLayer.bringToFront();
+  if(S.pdfBufferLayer&&map.hasLayer(S.pdfBufferLayer)&&S.pdfBufferLayer.bringToFront)S.pdfBufferLayer.bringToFront();
   // el polígono del usuario siempre arriba
   if(S.uLfl&&S.uLfl.bringToFront)S.uLfl.bringToFront();
 }
@@ -834,6 +857,8 @@ dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-ove
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');if(e.dataTransfer.files.length)handleUpload(Array.from(e.dataTransfer.files));});
 document.getElementById('fi').addEventListener('change',function(){if(this.files.length)handleUpload(Array.from(this.files));});
+document.getElementById('pdf-fi').addEventListener('change',function(){if(this.files.length)handlePdfPlanUpload(this.files[0]);});
+document.getElementById('cb-pdf-plan').addEventListener('change',function(){togglePdfPlan(this.checked);});
 
 async function handleUpload(files){
   const main=files.find(f=>{const n=f.name.toLowerCase();return n.endsWith('.shp')||n.endsWith('.gpkg')||n.endsWith('.kml')||n.endsWith('.kmz')||n.endsWith('.gpx')||n.endsWith('.geojson')||n.endsWith('.json')||n.endsWith('.zip');});
@@ -871,17 +896,119 @@ function addUser(gj,name){
   document.getElementById('btn-analyze').disabled=false;
   document.getElementById('btn-clear').style.display='block';
   map.fitBounds(S.uLfl.getBounds(),{padding:[20,20]});
+  restackLayers();
   toast(`✅ Cargado: ${n} polígono${n>1?'s':''} (${ha.toFixed(2)} ha)`);
 }
 
 function clearUserLayer(){
   if(S.uLfl){map.removeLayer(S.uLfl);S.uLfl=null;}
+  clearPdfPlanLayer();
   S.uGJ=null;
   document.getElementById('uli').style.display='none';
   document.getElementById('btn-analyze').disabled=true;
   document.getElementById('btn-clear').style.display='none';
   document.getElementById('fi').value='';
   closeResults();
+}
+
+function getPdfBufferMeters(){
+  const el=document.getElementById('pdf-buffer');
+  const v=Number(el&&el.value)||20;
+  return [5,20,50,100].includes(v)?v:20;
+}
+
+function getBufferedUserBounds(meters){
+  if(!S.uGJ)throw new Error('Primero cargue el polígono del predio');
+  const buffered=turf.buffer(S.uGJ,meters,{units:'meters'});
+  if(!buffered)throw new Error('No se pudo calcular el buffer del predio');
+  const bbox=turf.bbox(buffered);
+  return {buffered,bounds:L.latLngBounds([bbox[1],bbox[0]],[bbox[3],bbox[2]])};
+}
+
+function makeWhiteTransparent(canvas,threshold=246){
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  const d=img.data;
+  for(let i=0;i<d.length;i+=4){
+    if(d[i]>=threshold&&d[i+1]>=threshold&&d[i+2]>=threshold)d[i+3]=0;
+    else if(d[i]>225&&d[i+1]>225&&d[i+2]>225)d[i+3]=Math.min(d[i+3],95);
+  }
+  ctx.putImageData(img,0,0);
+}
+
+async function renderPdfFirstPage(file){
+  if(!window.pdfjsLib)throw new Error('No se pudo cargar PDF.js');
+  if(pdfjsLib.GlobalWorkerOptions){
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+  if(!pdf.numPages)throw new Error('PDF sin páginas');
+  const page=await pdf.getPage(1);
+  const vp0=page.getViewport({scale:1});
+  const scale=Math.min(2.2,Math.max(1.2,1400/Math.max(vp0.width,vp0.height)));
+  const viewport=page.getViewport({scale});
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.ceil(viewport.width);
+  canvas.height=Math.ceil(viewport.height);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  await page.render({canvasContext:ctx,viewport}).promise;
+  makeWhiteTransparent(canvas);
+  const result={url:canvas.toDataURL('image/png'),pages:pdf.numPages,width:canvas.width,height:canvas.height};
+  try{await pdf.destroy();}catch(e){}
+  return result;
+}
+
+async function handlePdfPlanUpload(file){
+  if(!file||!file.name.toLowerCase().endsWith('.pdf')){toast('Seleccione un archivo PDF',true);return;}
+  if(!S.uGJ){toast('Primero cargue el polígono del predio',true,5000);document.getElementById('pdf-fi').value='';return;}
+  showProg(true);setProg(15,'Leyendo PDF del plano…');
+  try{
+    const meters=getPdfBufferMeters();
+    const {buffered,bounds}=getBufferedUserBounds(meters);
+    setProg(45,'Renderizando primera página…');
+    const rendered=await renderPdfFirstPage(file);
+    setProg(75,'Colocando plano sobre el mapa…');
+    clearPdfPlanLayer();
+    S.pdfLayer=L.imageOverlay(rendered.url,bounds,{opacity:S.pdfOpacity,interactive:false}).addTo(map);
+    S.pdfBufferLayer=L.geoJSON(buffered,{style:{color:'#e74c3c',weight:2,dashArray:'6 4',fill:false,opacity:0.9},interactive:false}).addTo(map);
+    S.pdfName=file.name;
+    document.getElementById('pdf-toggle-row').style.display='flex';
+    document.getElementById('btn-pdf-clear').style.display='block';
+    document.getElementById('cb-pdf-plan').checked=true;
+    const info=document.getElementById('pdf-info');
+    info.style.display='block';
+    info.textContent=`${file.name} · página 1/${rendered.pages} · buffer ${meters} m · capa referencial`;
+    map.fitBounds(bounds,{padding:[25,25]});
+    restackLayers();
+    setProg(100,'Plano PDF cargado');
+    toast('📄 Plano PDF cargado como capa referencial',false,4500);
+    setTimeout(()=>showProg(false),350);
+  }catch(e){
+    showProg(false);
+    toast('PDF: '+e.message,true,6000);
+    console.error(e);
+  }finally{
+    document.getElementById('pdf-fi').value='';
+  }
+}
+
+function togglePdfPlan(on){
+  [S.pdfLayer,S.pdfBufferLayer].forEach(l=>{
+    if(!l)return;
+    if(on){if(!map.hasLayer(l))l.addTo(map);}
+    else if(map.hasLayer(l))map.removeLayer(l);
+  });
+  if(on)restackLayers();
+}
+
+function clearPdfPlanLayer(){
+  if(S.pdfLayer){map.removeLayer(S.pdfLayer);S.pdfLayer=null;}
+  if(S.pdfBufferLayer){map.removeLayer(S.pdfBufferLayer);S.pdfBufferLayer=null;}
+  S.pdfName=null;
+  const row=document.getElementById('pdf-toggle-row');if(row)row.style.display='none';
+  const btn=document.getElementById('btn-pdf-clear');if(btn)btn.style.display='none';
+  const info=document.getElementById('pdf-info');if(info){info.style.display='none';info.textContent='';}
+  const cb=document.getElementById('cb-pdf-plan');if(cb)cb.checked=false;
 }
 
 /* ── MINI-MAPS ── */
@@ -1540,6 +1667,9 @@ checks = {
     "WMTS proxy para TERRA 1997": "function proxiedTile" in HTML and "ProxiedTileLayer" in HTML,
     "Version cache-buster": "APP_VERSION" in HTML and "version.json" in HTML,
     "Favicon": "favicon.ico" in HTML,
+    "Plano PDF referencial": 'id="pdf-fi"' in HTML and "function handlePdfPlanUpload" in HTML and "pdfjsLib" in HTML,
+    "Buffer PDF configurable": 'id="pdf-buffer"' in HTML and "getBufferedUserBounds" in HTML and "turf.buffer" in HTML,
+    "Toggle Plano PDF": 'id="cb-pdf-plan"' in HTML and "function togglePdfPlan" in HTML,
     "Esri Wayback": "wayback.maptiles.arcgis.com" in HTML,
     "Emparejamiento PAIR": "const PAIR=" in HTML,
     "Descubrimiento runtime": "function discoverImageryConfig" in HTML,
