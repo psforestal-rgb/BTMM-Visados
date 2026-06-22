@@ -51,6 +51,14 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 - Carga de polígono: SHP, GPKG, GPX, KML, KMZ, GeoJSON (con reproyección automática).
 - Intersección espacial y cuadro de superficies (ha y % del predio), solo clases > 0.01 ha.
 - Mini-mapas por capa, cada uno sobre su ortofoto del período correspondiente.
+- Módulo **Áreas Silvestres Protegidas**: capa ASP local con simbología por área y
+  análisis de traslape (mini-mapas sin imagen aérea y cuadro de área por ASP).
+- Módulo **Fincas estatales y PNE**: carga de cuatro capas locales (Buffer 2 km
+  Carretera Interamericana, PNE del SNIT, Terrenos sobre 3000 m y Fincas del Estado
+  ACC) y análisis "Info PNE" que genera un mini-mapa del predio por capa y la tabla
+  de estimación de traslape (área en ha y % del predio; con número de finca e
+  información del plano para PNE del SNIT y Fincas del Estado ACC).
+- Botón de zoom al polígono cargado, disponible en todas las pestañas con visor.
 - Carga de plano PDF como capa referencial: detecta visualmente el contorno del
   predio en la primera página, recorta el dibujo, elimina el fondo blanco y lo
   muestra como dibujo transparente sobre todas las capas, sin alterar la geometría
@@ -74,6 +82,7 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 ```
 index.html          Visor completo y autónomo (datos y membrete embebidos)
 gen_v3.py           Pipeline Python que genera index.html a partir de los GPKG
+data/               GPKG locales de los módulos ASP y Fincas estatales y PNE (se sirven y cargan en runtime)
 membrete_sinac.dotx Plantilla Word del membrete institucional SINAC-ACC (export .docx)
 version.json        Versión publicada para forzar actualización del navegador
 favicon.ico         Icono del sitio
