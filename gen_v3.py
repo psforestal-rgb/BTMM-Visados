@@ -32,8 +32,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-22-membrete-docx-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-membrete-docx-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-22-membrete-docx-pdf-manual-v2">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-membrete-docx-pdf-manual-v2">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -87,6 +87,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .bp{background:var(--acc);color:#fff}.bp:hover{background:var(--acc2)}
 .bp:disabled{background:#204522;color:#5a8a5c;cursor:not-allowed}
 .bd{background:#3b1515;color:#ff7979;border:1px solid #5c2020}.bd:hover{background:#5c2020}
+.bs{background:#203d21;color:var(--txt2);border:1px solid #315f33}.bs:hover{background:#2a5a2a;color:var(--txt)}
+.pdf-tools{display:none;margin-top:5px;border:1px solid #315f33;border-radius:4px;background:#102611;padding:6px}
+.pdf-tools.on{display:block}
+.pdf-tools .hint{font-size:8px;color:#9bc99a;line-height:1.35;margin-bottom:4px}
+.pdf-tools .row{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.pdf-tools .stat{font-size:8px;color:#d4a02a;line-height:1.35;margin-top:4px}
 
 /* placeholder panels */
 .placeholder-panel{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center;padding:20px 14px;gap:10px}
@@ -285,6 +291,15 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
         <label class="ltog" id="pdf-toggle-row" style="display:none;margin-top:5px">
           <input type="checkbox" id="cb-pdf-plan" checked><span style="flex:1">Imagen del plano</span><span class="lbadge">ref</span>
         </label>
+        <button class="btn bs" id="btn-pdf-manual" style="display:none" onclick="togglePdfManualMode()">🎯 Ajuste manual</button>
+        <div class="pdf-tools" id="pdf-tools">
+          <div class="hint" id="pdf-manual-hint">Clic en un vértice del plano y luego en su vértice del polígono. El segundo clic se ajusta al vértice vectorial más cercano.</div>
+          <div class="row">
+            <button class="btn bs" id="btn-pdf-undo" onclick="undoPdfManualPoint()">↶ Punto</button>
+            <button class="btn bp" id="btn-pdf-apply" onclick="applyPdfManualFit()" disabled>Ajustar</button>
+          </div>
+          <div class="stat" id="pdf-manual-stat">0/3 pares mínimos</div>
+        </div>
         <button class="btn bd" id="btn-pdf-clear" style="display:none" onclick="clearPdfPlanLayer()">✖ Limpiar PDF</button>
         <div id="pdf-info" style="display:none;font-size:8px;color:#9bc99a;line-height:1.35;margin-top:4px"></div>
       </div>
@@ -381,7 +396,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-22-membrete-docx-v1';
+const APP_VERSION='2026-06-22-membrete-docx-pdf-manual-v2';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -430,13 +445,13 @@ const LD={
 
 const S={lfl:{},gjd:{},uGJ:null,uLfl:null,op:0.75,
   lastResults:null,lastUserGeoJSON:null,lastBounds:null,lastUserHa:0,lastUserN:0,lastAerialDate:null,
-  pdfLayer:null,pdfPlanData:null,pdfName:null,pdfOpacity:1};
+  pdfLayer:null,pdfPlanData:null,pdfName:null,pdfOpacity:1,pdfManual:{active:false,pairs:[],pending:null,markers:[]}};
 const miniMaps={};
 // Encuadre ajustado al predio para todos los mini-mapas (zoom al predio)
 const MM_FIT={padding:[12,12],maxZoom:17};
 
 /* ── MAP SETUP ── */
-const map=L.map('mc',{center:[9.58,-83.85],zoom:11,maxZoom:20});
+const map=L.map('mc',{center:[9.58,-83.85],zoom:11,maxZoom:22});
 
 function createRefPane(name,zIndex){
   map.createPane(name);
@@ -454,7 +469,7 @@ createRefPane('pdfPlanPane',720);
    un pane inferior y topónimos/límites en un pane superior. */
 const TRANSPARENT_TILE='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==';
 let refOpacity=0.85;
-const refTileDefaults={maxZoom:19,updateWhenIdle:true,keepBuffer:2,errorTileUrl:TRANSPARENT_TILE};
+const refTileDefaults={maxNativeZoom:19,maxZoom:22,updateWhenIdle:true,keepBuffer:2,errorTileUrl:TRANSPARENT_TILE};
 function referenceTile(url,opts,baseOpacity){
   const layer=L.tileLayer(url,Object.assign({},refTileDefaults,opts,{opacity:baseOpacity}));
   layer._refBaseOpacity=baseOpacity;
@@ -567,10 +582,11 @@ function buildOrthoLayer(key,opts){
       maxNativeZoom:20, maxZoom:opts.maxZoom||21, attribution:c.attribution};
     // El WMTS de TERRA 1997 no publica CORS; por defecto pasa por el proxy OGC.
     lyr=opts.direct ? L.tileLayer(c.url,tileOpts) : proxiedTile(c.url,tileOpts);
-  } else { // xyz (Esri Wayback) — over-zoom para permitir acercamiento igual al 2023
-    const url=WB_BASE.replace('{rel}', c.rel);
+  } else { // xyz (Esri Wayback) — over-zoom para acercamiento fino aunque la fuente nativa llegue a z19
+    const url=(c.urlTemplate||WB_BASE.replace('{rel}', c.rel))
+      .replace('{level}','{z}').replace('{row}','{y}').replace('{col}','{x}');
     lyr=L.tileLayer(url,{opacity:op, crossOrigin:opts.crossOrigin||null,
-      maxNativeZoom:19, maxZoom:opts.maxZoom||20, attribution:c.attribution});
+      maxNativeZoom:19, maxZoom:opts.maxZoom||22, attribution:c.attribution});
   }
   return lyr;
 }
@@ -655,7 +671,14 @@ async function discoverImageryConfig(){
     const r=await fetch('https://s3-us-west-2.amazonaws.com/config.maptiles.arcgis.com/waybackconfig.json',{cache:'force-cache'});
     if(r.ok){
       const cfg=await r.json();
-      const items=Object.values(cfg).map(v=>({rel:String(v.releaseNum||'').trim(),label:v.releaseDateLabel||v.itemTitle||'',d:v.releaseDatetime||0}));
+      const entries=Array.isArray(cfg)?cfg.map((v,i)=>[String(v.releaseNum||i),v]):Object.entries(cfg);
+      const items=entries.map(([k,v])=>{
+        const rel=String(v.releaseNum||k||'').trim();
+        const label=v.releaseDateLabel||v.itemTitle||'';
+        const d=Number(v.releaseDatetime||0);
+        const urlTemplate=v.itemURL||v.tileURL||'';
+        return{rel,label,d,urlTemplate};
+      });
       const pick=(year)=>{
         const cand=items.filter(it=>String(it.label).includes(String(year))&&it.rel);
         if(!cand.length)return null;
@@ -663,8 +686,8 @@ async function discoverImageryConfig(){
         return cand[0];
       };
       const p21=pick(2021), p23=pick(2023);
-      if(p21){ORTHO.wb2021.rel=p21.rel;ORTHO.wb2021.attribution='Esri World Imagery (Wayback '+p21.label+')';ORTHO.wb2021.dateLabel=p21.label;}
-      if(p23){ORTHO.wb2023.rel=p23.rel;ORTHO.wb2023.attribution='Esri World Imagery (Wayback '+p23.label+')';ORTHO.wb2023.dateLabel=p23.label;}
+      if(p21){ORTHO.wb2021.rel=p21.rel;ORTHO.wb2021.urlTemplate=p21.urlTemplate;ORTHO.wb2021.attribution='Esri World Imagery (Wayback '+p21.label+')';ORTHO.wb2021.dateLabel=p21.label;}
+      if(p23){ORTHO.wb2023.rel=p23.rel;ORTHO.wb2023.urlTemplate=p23.urlTemplate;ORTHO.wb2023.attribution='Esri World Imagery (Wayback '+p23.label+')';ORTHO.wb2023.dateLabel=p23.label;}
     }
   }catch(e){console.warn('Wayback config:',e);}
   // 2) Nombres de capa GeoServer cuando una ortofoto WMS no fija su capa manualmente
@@ -924,16 +947,153 @@ function clearUserLayer(){
   closeResults();
 }
 
-function makePdfLineArtTransparent(canvas,threshold=238){
+function removePdfManualMarkers(){
+  const m=S.pdfManual;
+  (m.markers||[]).forEach(x=>{try{map.removeLayer(x);}catch(e){}});
+  m.markers=[];m.pending=null;
+}
+
+function resetPdfManualControl(){
+  const m=S.pdfManual;
+  removePdfManualMarkers();
+  m.active=false;m.pairs=[];
+  const tools=document.getElementById('pdf-tools');if(tools)tools.classList.remove('on');
+  const btn=document.getElementById('btn-pdf-manual');if(btn)btn.textContent='🎯 Ajuste manual';
+  updatePdfManualUi();
+}
+
+function updatePdfManualUi(){
+  const m=S.pdfManual,n=(m.pairs||[]).length;
+  const stat=document.getElementById('pdf-manual-stat');
+  if(stat)stat.textContent=(m.pending?'Seleccione vértice vectorial · ':'')+n+'/3 pares mínimos';
+  const apply=document.getElementById('btn-pdf-apply');
+  if(apply)apply.disabled=n<3;
+  const hint=document.getElementById('pdf-manual-hint');
+  if(hint)hint.textContent=m.pending?
+    'Ahora haga clic cerca del vértice correspondiente del polígono. El punto se ajustará al vértice vectorial más cercano.':
+    'Clic en un vértice del plano y luego en su vértice del polígono. Repita al menos 3 veces.';
+}
+
+function showPdfPlanControls(show){
+  const row=document.getElementById('pdf-toggle-row');if(row)row.style.display=show?'flex':'none';
+  const clear=document.getElementById('btn-pdf-clear');if(clear)clear.style.display=show?'block':'none';
+  const manual=document.getElementById('btn-pdf-manual');if(manual)manual.style.display=show?'block':'none';
+}
+
+function pdfAffinePoint(data,x,y){
+  const a=data.affine;
+  const p=L.point(a[0]*x+a[1]*y+a[2],a[3]*x+a[4]*y+a[5]);
+  return L.CRS.EPSG3857.unproject(p);
+}
+
+function pdfAffineBounds(data){
+  const w=data.imageWidth,h=data.imageHeight;
+  return L.latLngBounds([
+    pdfAffinePoint(data,0,0),pdfAffinePoint(data,w,0),
+    pdfAffinePoint(data,0,h),pdfAffinePoint(data,w,h)
+  ]);
+}
+
+const PdfAffineLayer=L.Layer.extend({
+  initialize:function(data,options){
+    this.data=data;L.setOptions(this,options||{});
+  },
+  onAdd:function(mapRef){
+    this._map=mapRef;
+    this._canvas=L.DomUtil.create('canvas','leaflet-zoom-animated');
+    this._canvas.style.pointerEvents='none';
+    this._canvas.style.opacity=this.options.opacity==null?1:this.options.opacity;
+    const pane=mapRef.getPane(this.options.pane||'overlayPane');
+    pane.appendChild(this._canvas);
+    this._ctx=this._canvas.getContext('2d');
+    this._img=new Image();
+    this._img.onload=()=>{this._loaded=true;this._reset();};
+    this._img.src=this.data.url;
+    mapRef.on('move zoom resize viewreset zoomend moveend',this._reset,this);
+    this._reset();
+  },
+  onRemove:function(mapRef){
+    mapRef.off('move zoom resize viewreset zoomend moveend',this._reset,this);
+    if(this._canvas&&this._canvas.parentNode)this._canvas.parentNode.removeChild(this._canvas);
+  },
+  setOpacity:function(op){
+    this.options.opacity=op;
+    if(this._canvas)this._canvas.style.opacity=op;
+  },
+  _reset:function(){
+    if(!this._map||!this._canvas)return;
+    const size=this._map.getSize(),topLeft=this._map.containerPointToLayerPoint([0,0]);
+    if(this._canvas.width!==size.x)this._canvas.width=size.x;
+    if(this._canvas.height!==size.y)this._canvas.height=size.y;
+    L.DomUtil.setPosition(this._canvas,topLeft);
+    const ctx=this._ctx;
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,size.x,size.y);
+    if(!this._loaded)return;
+    const d=this.data,w=d.imageWidth,h=d.imageHeight;
+    const p0=this._map.latLngToLayerPoint(pdfAffinePoint(d,0,0));
+    const px=this._map.latLngToLayerPoint(pdfAffinePoint(d,w,0));
+    const py=this._map.latLngToLayerPoint(pdfAffinePoint(d,0,h));
+    ctx.setTransform((px.x-p0.x)/w,(px.y-p0.y)/w,(py.x-p0.x)/h,(py.y-p0.y)/h,p0.x-topLeft.x,p0.y-topLeft.y);
+    ctx.drawImage(this._img,0,0);
+    ctx.setTransform(1,0,0,1,0,0);
+  }
+});
+
+function createPdfPlanLayer(data){
+  if(data.affine)return new PdfAffineLayer(data,{pane:'pdfPlanPane',opacity:S.pdfOpacity});
+  return L.imageOverlay(data.url,data.bounds,{pane:'pdfPlanPane',opacity:S.pdfOpacity,interactive:false});
+}
+
+function setPdfPlanData(data,infoText){
+  if(S.pdfLayer){map.removeLayer(S.pdfLayer);S.pdfLayer=null;}
+  S.pdfPlanData=data;
+  S.pdfLayer=createPdfPlanLayer(data).addTo(map);
+  S.pdfName=data.name;
+  showPdfPlanControls(true);
+  document.getElementById('cb-pdf-plan').checked=true;
+  const info=document.getElementById('pdf-info');
+  info.style.display='block';info.textContent=infoText;
+  restackLayers();
+}
+
+function makePdfLineArtTransparent(canvas,threshold=242,bufferPx=1){
   const ctx=canvas.getContext('2d',{willReadFrequently:true});
   const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-  const d=img.data;
+  const d=img.data,w=canvas.width,h=canvas.height,total=w*h;
+  const ink=new Uint8Array(total);
   for(let i=0;i<d.length;i+=4){
+    const p=i/4;
     if(d[i+3]<20){d[i+3]=0;continue;}
     const lum=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-    if(lum>=threshold){d[i+3]=0;continue;}
-    const a=lum<205?255:Math.round(Math.max(70,Math.min(220,(threshold-lum)*5.5)));
-    d[i]=0;d[i+1]=0;d[i+2]=0;d[i+3]=Math.min(d[i+3],a);
+    const maxc=Math.max(d[i],d[i+1],d[i+2]),minc=Math.min(d[i],d[i+1],d[i+2]);
+    const saturated=(maxc-minc)>24;
+    if(lum>=threshold&&!saturated){d[i+3]=0;continue;}
+    const a=lum<215||saturated?255:Math.round(Math.max(90,Math.min(230,(threshold-lum)*6)));
+    d[i+3]=Math.min(d[i+3],a);ink[p]=1;
+    if(!saturated&&lum<90){d[i]=0;d[i+1]=0;d[i+2]=0;}
+  }
+  if(bufferPx>0){
+    const src=new Uint8ClampedArray(d);
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const p=y*w+x,o=p*4;
+        if(ink[p])continue;
+        let found=-1;
+        for(let dy=-bufferPx;dy<=bufferPx&&found<0;dy++){
+          const yy=y+dy;if(yy<0||yy>=h)continue;
+          for(let dx=-bufferPx;dx<=bufferPx;dx++){
+            const xx=x+dx;if(xx<0||xx>=w)continue;
+            const q=yy*w+xx;
+            if(ink[q]){found=q;break;}
+          }
+        }
+        if(found>=0){
+          const qo=found*4;
+          d[o]=src[qo];d[o+1]=src[qo+1];d[o+2]=src[qo+2];d[o+3]=75;
+        }
+      }
+    }
   }
   ctx.putImageData(img,0,0);
 }
@@ -1209,6 +1369,149 @@ async function renderPdfFirstPage(file){
   return result;
 }
 
+function latLngToPdfPixel(data,latlng){
+  if(data.affine){
+    const p=L.CRS.EPSG3857.project(latlng),a=data.affine;
+    const det=a[0]*a[4]-a[1]*a[3];
+    if(Math.abs(det)<1e-9)return null;
+    const dx=p.x-a[2],dy=p.y-a[5];
+    return[(a[4]*dx-a[1]*dy)/det,(-a[3]*dx+a[0]*dy)/det];
+  }
+  const b=data.bounds,n=b.getNorth(),s=b.getSouth(),e=b.getEast(),w=b.getWest();
+  const x=((latlng.lng-w)/(e-w))*data.imageWidth;
+  const y=((n-latlng.lat)/(n-s))*data.imageHeight;
+  return[x,y];
+}
+
+function pdfClickInsideImage(data,px){
+  return px&&px[0]>=0&&px[1]>=0&&px[0]<=data.imageWidth&&px[1]<=data.imageHeight;
+}
+
+function collectUserVertices(){
+  const out=[];
+  function walk(g){
+    if(!g)return;
+    if(g.type==='Polygon')g.coordinates.forEach(r=>r.forEach(c=>out.push(L.latLng(c[1],c[0]))));
+    else if(g.type==='MultiPolygon')g.coordinates.forEach(p=>p.forEach(r=>r.forEach(c=>out.push(L.latLng(c[1],c[0])))));
+    else if(g.type==='GeometryCollection')g.geometries.forEach(walk);
+  }
+  (S.uGJ.features||[]).forEach(f=>walk(f.geometry));
+  return out;
+}
+
+function nearestUserVertex(latlng){
+  const p=map.latLngToContainerPoint(latlng);
+  let best=null,bd=Infinity;
+  collectUserVertices().forEach(v=>{
+    const q=map.latLngToContainerPoint(v),d=p.distanceTo(q);
+    if(d<bd){bd=d;best=v;}
+  });
+  return best?{latlng:best,dist:bd}:null;
+}
+
+function addPdfManualMarker(latlng,color,label){
+  const marker=L.circleMarker(latlng,{radius:5,color,weight:2,fillColor:color,fillOpacity:.85,interactive:false,pane:'pdfPlanPane'}).addTo(map);
+  marker.bindTooltip(label,{permanent:false,direction:'top',className:'itt'});
+  S.pdfManual.markers.push(marker);
+  return marker;
+}
+
+function togglePdfManualMode(){
+  if(!S.pdfPlanData){toast('Cargue primero un PDF',true);return;}
+  S.pdfManual.active=!S.pdfManual.active;
+  const tools=document.getElementById('pdf-tools');
+  if(tools)tools.classList.toggle('on',S.pdfManual.active);
+  const btn=document.getElementById('btn-pdf-manual');
+  if(btn)btn.textContent=S.pdfManual.active?'✓ Ajuste activo':'🎯 Ajuste manual';
+  updatePdfManualUi();
+  toast(S.pdfManual.active?'Ajuste manual activo: marque pares plano → vector':'Ajuste manual pausado',false,3500);
+}
+
+function undoPdfManualPoint(){
+  const m=S.pdfManual;
+  if(m.pending){
+    m.pending=null;
+    const marker=m.markers.pop();if(marker)map.removeLayer(marker);
+  }else if(m.pairs.length){
+    m.pairs.pop();
+    for(let i=0;i<2;i++){const marker=m.markers.pop();if(marker)map.removeLayer(marker);}
+  }
+  updatePdfManualUi();
+}
+
+function solve3(A,b){
+  const m=A.map((r,i)=>[r[0],r[1],r[2],b[i]]);
+  for(let col=0;col<3;col++){
+    let piv=col;
+    for(let r=col+1;r<3;r++)if(Math.abs(m[r][col])>Math.abs(m[piv][col]))piv=r;
+    if(Math.abs(m[piv][col])<1e-12)throw new Error('Los puntos de control no permiten calcular un ajuste estable');
+    if(piv!==col){const tmp=m[col];m[col]=m[piv];m[piv]=tmp;}
+    const div=m[col][col];
+    for(let c=col;c<4;c++)m[col][c]/=div;
+    for(let r=0;r<3;r++){
+      if(r===col)continue;
+      const f=m[r][col];
+      for(let c=col;c<4;c++)m[r][c]-=f*m[col][c];
+    }
+  }
+  return[m[0][3],m[1][3],m[2][3]];
+}
+
+function fitAffineFromPairs(pairs){
+  const N=[[0,0,0],[0,0,0],[0,0,0]],bx=[0,0,0],by=[0,0,0];
+  pairs.forEach(pair=>{
+    const v=[pair.src[0],pair.src[1],1];
+    const dst=L.CRS.EPSG3857.project(L.latLng(pair.dst[1],pair.dst[0]));
+    for(let r=0;r<3;r++){
+      bx[r]+=v[r]*dst.x;by[r]+=v[r]*dst.y;
+      for(let c=0;c<3;c++)N[r][c]+=v[r]*v[c];
+    }
+  });
+  const ax=solve3(N,bx),ay=solve3(N,by);
+  return[ax[0],ax[1],ax[2],ay[0],ay[1],ay[2]];
+}
+
+function onPdfManualMapClick(e){
+  const m=S.pdfManual;
+  if(!m.active||!S.pdfPlanData)return;
+  if(e.originalEvent)L.DomEvent.stop(e.originalEvent);
+  if(!m.pending){
+    const px=latLngToPdfPixel(S.pdfPlanData,e.latlng);
+    if(!pdfClickInsideImage(S.pdfPlanData,px)){toast('Haga clic sobre la imagen del plano',true,3500);return;}
+    m.pending={src:px,latlng:e.latlng,marker:addPdfManualMarker(e.latlng,'#f0c040','Plano')};
+  }else{
+    const snap=nearestUserVertex(e.latlng);
+    if(!snap){toast('No hay vértices vectoriales para ajustar',true);return;}
+    const dst=[snap.latlng.lng,snap.latlng.lat];
+    m.pairs.push({src:m.pending.src,dst});
+    addPdfManualMarker(snap.latlng,'#56b356','Vector');
+    m.pending=null;
+    if(snap.dist>35)toast('Vértice ajustado al punto vectorial más cercano',false,2500);
+  }
+  updatePdfManualUi();
+}
+map.on('click',onPdfManualMapClick);
+
+function applyPdfManualFit(){
+  const m=S.pdfManual;
+  if(!S.pdfPlanData||m.pairs.length<3){toast('Marque al menos 3 pares plano/vector',true);return;}
+  try{
+    const affine=fitAffineFromPairs(m.pairs);
+    const data=Object.assign({},S.pdfPlanData,{affine});
+    data.bounds=pdfAffineBounds(data);
+    setPdfPlanData(data,(S.pdfName||'PDF cargado')+' · ajuste manual con '+m.pairs.length+' pares · fondo transparente');
+    removePdfManualMarkers();
+    m.active=false;
+    const tools=document.getElementById('pdf-tools');if(tools)tools.classList.remove('on');
+    const btn=document.getElementById('btn-pdf-manual');if(btn)btn.textContent='🎯 Ajuste manual';
+    map.fitBounds(data.bounds,{padding:[25,25]});
+    toast('Plano ajustado manualmente',false,4500);
+  }catch(e){
+    toast('Ajuste manual: '+e.message,true,6000);
+    console.error(e);
+  }
+}
+
 async function handlePdfPlanUpload(file){
   if(!file||!file.name.toLowerCase().endsWith('.pdf')){toast('Seleccione un archivo PDF',true);return;}
   if(!S.uGJ){toast('Primero cargue el polígono del predio',true,5000);document.getElementById('pdf-fi').value='';return;}
@@ -1217,26 +1520,33 @@ async function handlePdfPlanUpload(file){
     const bounds=getUserLatLngBounds();
     setProg(35,'Renderizando primera página…');
     const rendered=await renderPdfFirstPage(file);
+    let detected=null,crop=null,autoErr=null,autoOk=false;
     setProg(60,'Detectando contorno del predio…');
-    const detected=detectPdfPredioBox(rendered.canvas,S.uGJ);
-    const crop=cropPdfToDetectedPredio(rendered.canvas,detected);
-    setProg(82,'Georreferenciando recorte del plano…');
+    try{
+      detected=detectPdfPredioBox(rendered.canvas,S.uGJ);
+      crop=cropPdfToDetectedPredio(rendered.canvas,detected);
+      autoOk=true;
+    }catch(e){
+      autoErr=e;
+      crop=rendered.canvas;
+      makePdfLineArtTransparent(crop);
+    }
+    setProg(82,autoOk?'Georreferenciando recorte del plano…':'Cargando plano para ajuste manual…');
     clearPdfPlanLayer();
     const pdfUrl=crop.toDataURL('image/png');
-    S.pdfPlanData={url:pdfUrl,bounds,name:file.name};
-    S.pdfLayer=L.imageOverlay(pdfUrl,bounds,{pane:'pdfPlanPane',opacity:S.pdfOpacity,interactive:false}).addTo(map);
-    S.pdfName=file.name;
-    document.getElementById('pdf-toggle-row').style.display='flex';
-    document.getElementById('btn-pdf-clear').style.display='block';
-    document.getElementById('cb-pdf-plan').checked=true;
-    const info=document.getElementById('pdf-info');
-    info.style.display='block';
-    const fitTxt=detected.fit?` · calce ${Math.round(detected.fit.coverage*100)}%`:'';
-    info.textContent=`${file.name} · página 1/${rendered.pages} · contorno validado${fitTxt} · fondo transparente`;
+    const data={url:pdfUrl,bounds,name:file.name,imageWidth:crop.width,imageHeight:crop.height,affine:null};
+    const fitTxt=(autoOk&&detected.fit)?` · calce ${Math.round(detected.fit.coverage*100)}%`:'';
+    const infoText=autoOk?
+      `${file.name} · página 1/${rendered.pages} · contorno validado${fitTxt} · fondo transparente`:
+      `${file.name} · página 1/${rendered.pages} · carga referencial · active el ajuste manual para georreferenciar`;
+    setPdfPlanData(data,infoText);
     map.fitBounds(bounds,{padding:[25,25]});
-    restackLayers();
     setProg(100,'Plano PDF cargado');
-    toast('📄 Plano PDF cargado como capa referencial',false,4500);
+    if(autoOk)toast('📄 Plano PDF cargado como capa referencial',false,4500);
+    else{
+      console.warn('PDF auto-fit fallback:',autoErr);
+      toast('PDF cargado sin calce automático. Use Ajuste manual.',true,6500);
+    }
     setTimeout(()=>showProg(false),350);
   }catch(e){
     showProg(false);
@@ -1256,10 +1566,10 @@ function togglePdfPlan(on){
 
 function clearPdfPlanLayer(){
   if(S.pdfLayer){map.removeLayer(S.pdfLayer);S.pdfLayer=null;}
+  resetPdfManualControl();
   S.pdfPlanData=null;
   S.pdfName=null;
-  const row=document.getElementById('pdf-toggle-row');if(row)row.style.display='none';
-  const btn=document.getElementById('btn-pdf-clear');if(btn)btn.style.display='none';
+  showPdfPlanControls(false);
   const info=document.getElementById('pdf-info');if(info){info.style.display='none';info.textContent='';}
   const cb=document.getElementById('cb-pdf-plan');if(cb)cb.checked=false;
 }
@@ -1283,7 +1593,7 @@ function initMiniMap(key,userGeoJSON,bounds){
     try{ buildOrthoLayer(okey,{opacity:1}).addTo(m); baseAdded=true; }catch(e){}
   }
   if(!baseAdded){
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:18}).addTo(m);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxNativeZoom:19,maxZoom:22}).addTo(m);
   }
   if(S.gjd[key]){
     L.geoJSON(S.gjd[key],{
@@ -1305,7 +1615,7 @@ function initAerialMiniMap(userGeoJSON,bounds){
   const m=L.map(div,{zoomControl:false,attributionControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,touchZoom:false,boxZoom:false,keyboard:false});
   miniMaps['__aerial']=m;
   // Solo imagen aérea, sin capas de cobertura, para apreciar el terreno real
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(m);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxNativeZoom:19,maxZoom:22}).addTo(m);
   L.geoJSON(userGeoJSON,{
     style:{color:'#f0c040',fillColor:'transparent',fillOpacity:0,weight:2.5,dashArray:'6 3'}
   }).addTo(m);
@@ -1731,6 +2041,17 @@ function _loadImage(url){
 async function _drawPdfPlan(ctx,m,pdfData,scale){
   if(!pdfData||!pdfData.url||!pdfData.bounds)return;
   const img=await _loadImage(pdfData.url);
+  if(pdfData.affine){
+    const w=pdfData.imageWidth,h=pdfData.imageHeight;
+    const p0=m.latLngToContainerPoint(pdfAffinePoint(pdfData,0,0));
+    const px=m.latLngToContainerPoint(pdfAffinePoint(pdfData,w,0));
+    const py=m.latLngToContainerPoint(pdfAffinePoint(pdfData,0,h));
+    ctx.save();
+    ctx.setTransform((px.x-p0.x)*scale/w,(px.y-p0.y)*scale/w,(py.x-p0.x)*scale/h,(py.y-p0.y)*scale/h,p0.x*scale,p0.y*scale);
+    ctx.drawImage(img,0,0);
+    ctx.restore();
+    return;
+  }
   const nw=m.latLngToContainerPoint(pdfData.bounds.getNorthWest());
   const se=m.latLngToContainerPoint(pdfData.bounds.getSouthEast());
   ctx.drawImage(img,nw.x*scale,nw.y*scale,(se.x-nw.x)*scale,(se.y-nw.y)*scale);
@@ -1738,10 +2059,10 @@ async function _drawPdfPlan(ctx,m,pdfData,scale){
 
 function _addReportBaseLayer(m,cfg){
   if(cfg.currentImagery){
-    return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{crossOrigin:'anonymous',maxZoom:19});
+    return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{crossOrigin:'anonymous',maxNativeZoom:19,maxZoom:22});
   }
-  if(cfg.backgroundKey&&ORTHO[cfg.backgroundKey])return buildOrthoLayer(cfg.backgroundKey,{opacity:1,crossOrigin:'anonymous',maxZoom:21});
-  return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{crossOrigin:'anonymous',maxZoom:19});
+  if(cfg.backgroundKey&&ORTHO[cfg.backgroundKey])return buildOrthoLayer(cfg.backgroundKey,{opacity:1,crossOrigin:'anonymous',maxZoom:22});
+  return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{crossOrigin:'anonymous',maxNativeZoom:19,maxZoom:22});
 }
 
 /* Captura un mapa combinado imagen/cobertura para el reporte Word */
@@ -2074,6 +2395,8 @@ checks = {
     "Version cache-buster": "APP_VERSION" in HTML and "version.json" in HTML,
     "Favicon": "favicon.ico" in HTML,
     "Plano PDF referencial": 'id="pdf-fi"' in HTML and "function handlePdfPlanUpload" in HTML and "pdfjsLib" in HTML,
+    "Ajuste manual PDF": 'id="btn-pdf-manual"' in HTML and "function applyPdfManualFit" in HTML and "fitAffineFromPairs" in HTML,
+    "PDF affine layer": "const PdfAffineLayer" in HTML and "pdfAffinePoint" in HTML,
     "Detector contorno PDF": "function detectPdfPredioBox" in HTML and "cropPdfToDetectedPredio" in HTML and "contorno detectado" in HTML,
     "Control calce PDF": "function pdfBoundaryFit" in HTML and "refinePdfBoxForTarget" in HTML and "contorno validado" in HTML,
     "Line art PDF transparente": "function makePdfLineArtTransparent" in HTML and "pdfPlanPane" in HTML and "fondo transparente" in HTML,
@@ -2098,7 +2421,7 @@ checks = {
     "Nota ajuste en leyenda": "Capa ajustada:" in HTML,
     "Nota ajuste +210": "+210 m en X" in HTML or "+210 m X" in HTML,
     "Wayback over-zoom (maxNativeZoom 19)": "maxNativeZoom:19" in HTML,
-    "Mapa maxZoom 20": "zoom:11,maxZoom:20" in HTML,
+    "Mapa maxZoom 22": "zoom:11,maxZoom:22" in HTML,
     "Discovery robusto (leaf layer)": "function firstLeafLayerName" in HTML,
     "Ortofoto 2014-2017 discovery desactivado": "discoverLayer:false" in HTML and "ortofoto2017_5000_altaresolucion" in HTML,
     "Estado por capa (todas)": "st-orto1417" in HTML and "st-wb2021" in HTML,

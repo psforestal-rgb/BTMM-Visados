@@ -36,6 +36,8 @@ enrutan por un proxy OGC (Cloudflare Worker) que añade CORS y caché:
 - Imagen aérea 2021 / 2023 — Esri World Imagery (Wayback)
 
 > Las ortofotos del SNIT son de escala 1:5000: se deben ver acercando el zoom.
+> Las imágenes Esri Wayback usan sobreampliación hasta zoom 22 cuando la fuente
+> nativa no publica más detalle que zoom 19.
 
 ## Actualización y caché
 
@@ -51,9 +53,13 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 - Mini-mapas por capa, cada uno sobre su ortofoto del período correspondiente.
 - Carga de plano PDF como capa referencial: detecta visualmente el contorno del
   predio en la primera página, recorta el dibujo, elimina el fondo blanco y lo
-  muestra como trazos negros sobre todas las capas, sin alterar la geometría
+  muestra como dibujo transparente sobre todas las capas, sin alterar la geometría
   oficial ni los cálculos de cobertura. El recorte se valida contra el perímetro
   del polígono cargado para evitar montajes desplazados por rótulos del PDF.
+- Si la detección automática del PDF no calza, el plano se carga de todos modos
+  como referencia transparente. El botón **Ajuste manual** permite marcar pares
+  de puntos plano/vector, con snapping al vértice vectorial más cercano, y aplicar
+  un ajuste affine con un mínimo de tres pares.
 - Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
 - Exportación a documento **Word** (.docx) sobre el **membrete institucional
