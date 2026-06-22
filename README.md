@@ -55,7 +55,8 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   oficial ni los cálculos de cobertura.
 - Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
-- Exportación a documento **Word** (.doc) con mapas y tablas.
+- Exportación a documento **Word** (.doc) con mapas combinados imagen/cobertura
+  en una sola columna, centrados, con simbología por vista y flecha norte.
 
 ## Estructura del repositorio
 
@@ -69,7 +70,8 @@ README.md       Este archivo
 ```
 
 > `gen_v3.py` requiere los GeoPackage originales y `layers_b64.json` (no incluidos por
-> tamaño/sensibilidad). El visor publicado (`index.html`) es autosuficiente.
+> tamaño/sensibilidad). Puede leer `layers_b64.json` junto al script o desde la
+> variable `LAYERS_B64_PATH`. El visor publicado (`index.html`) es autosuficiente.
 
 ## Créditos y fuentes
 

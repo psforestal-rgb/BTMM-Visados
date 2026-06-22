@@ -1,6 +1,24 @@
 import json
+import os
+from pathlib import Path
 
-with open("/home/claude/cobertura_fo/layers_b64.json") as f:
+
+def _layers_b64_path():
+    candidates = []
+    env_path = os.environ.get("LAYERS_B64_PATH")
+    if env_path:
+        candidates.append(Path(env_path))
+    candidates.append(Path(__file__).with_name("layers_b64.json"))
+    candidates.append(Path("/home/claude/cobertura_fo/layers_b64.json"))
+    for path in candidates:
+        if path.exists():
+            return path
+    raise FileNotFoundError(
+        "No se encontro layers_b64.json. Defina LAYERS_B64_PATH o coloque el archivo junto a gen_v3.py."
+    )
+
+
+with open(_layers_b64_path(), encoding="utf-8") as f:
     D = json.load(f)
 
 CF2021,CF2023,FN2000,FN2005,TB2012 = D["cf2021"],D["cf2023"],D["fn2000"],D["fn2005"],D["tb2012"]
@@ -14,8 +32,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-22-pdf-lineart-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-pdf-lineart-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-22-word-report-maps-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-word-report-maps-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -363,7 +381,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-22-pdf-lineart-v1';
+const APP_VERSION='2026-06-22-word-report-maps-v1';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -412,7 +430,7 @@ const LD={
 
 const S={lfl:{},gjd:{},uGJ:null,uLfl:null,op:0.75,
   lastResults:null,lastUserGeoJSON:null,lastBounds:null,lastUserHa:0,lastUserN:0,lastAerialDate:null,
-  pdfLayer:null,pdfName:null,pdfOpacity:1};
+  pdfLayer:null,pdfPlanData:null,pdfName:null,pdfOpacity:1};
 const miniMaps={};
 // Encuadre ajustado al predio para todos los mini-mapas (zoom al predio)
 const MM_FIT={padding:[12,12],maxZoom:17};
@@ -1066,7 +1084,9 @@ async function handlePdfPlanUpload(file){
     const crop=cropPdfToDetectedPredio(rendered.canvas,detected);
     setProg(82,'Georreferenciando recorte del plano…');
     clearPdfPlanLayer();
-    S.pdfLayer=L.imageOverlay(crop.toDataURL('image/png'),bounds,{pane:'pdfPlanPane',opacity:S.pdfOpacity,interactive:false}).addTo(map);
+    const pdfUrl=crop.toDataURL('image/png');
+    S.pdfPlanData={url:pdfUrl,bounds,name:file.name};
+    S.pdfLayer=L.imageOverlay(pdfUrl,bounds,{pane:'pdfPlanPane',opacity:S.pdfOpacity,interactive:false}).addTo(map);
     S.pdfName=file.name;
     document.getElementById('pdf-toggle-row').style.display='flex';
     document.getElementById('btn-pdf-clear').style.display='block';
@@ -1097,6 +1117,7 @@ function togglePdfPlan(on){
 
 function clearPdfPlanLayer(){
   if(S.pdfLayer){map.removeLayer(S.pdfLayer);S.pdfLayer=null;}
+  S.pdfPlanData=null;
   S.pdfName=null;
   const row=document.getElementById('pdf-toggle-row');if(row)row.style.display='none';
   const btn=document.getElementById('btn-pdf-clear');if(btn)btn.style.display='none';
@@ -1160,27 +1181,31 @@ function initAerialMiniMap(userGeoJSON,bounds){
 }
 
 /* ── Consulta de fecha de imagen Esri World Imagery (campo SRC_DATE2) ── */
-async function fetchEsriImageryDate(lat,lon){
-  const el=document.getElementById('mm-aerial-src');
-  const titleEl=document.getElementById('mm-aerial-title');
-  // Extensión pequeña alrededor del punto, a escala de zoom ~16-17 (la metadata
-  // de Esri se sirve a zoom >=12). imageDisplay y mapExtent deben ser coherentes.
+async function getEsriImageryDateText(lat,lon){
   const d=0.0025;
   const url='https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/identify'+
     '?f=json&geometry='+encodeURIComponent(JSON.stringify({x:lon,y:lat,spatialReference:{wkid:4326}}))+
     '&geometryType=esriGeometryPoint&sr=4326&tolerance=2&returnGeometry=false&layers=all'+
     '&mapExtent='+[lon-d,lat-d,lon+d,lat+d].join(',')+
     '&imageDisplay=600,600,96';
+  const resp=await fetch(url);
+  if(!resp.ok)throw new Error('HTTP '+resp.status);
+  const info=parseEsriImageryResults(await resp.json());
+  if(!info)return null;
+  let txt='Fuente: Esri World Imagery';
+  if(info.dateStr)txt+=' · '+info.dateStr;
+  if(info.provider)txt+=' · '+info.provider;
+  if(info.res)txt+=' · '+info.res;
+  return {text:txt,dateStr:info.dateStr||null};
+}
+
+async function fetchEsriImageryDate(lat,lon){
+  const el=document.getElementById('mm-aerial-src');
+  const titleEl=document.getElementById('mm-aerial-title');
   try{
-    const resp=await fetch(url);
-    if(!resp.ok)throw new Error('HTTP '+resp.status);
-    const data=await resp.json();
-    const info=parseEsriImageryResults(data);
+    const info=await getEsriImageryDateText(lat,lon);
     if(info){
-      let txt='Fuente: Esri World Imagery';
-      if(info.dateStr)txt+=' · '+info.dateStr;
-      if(info.provider)txt+=' · '+info.provider;
-      if(info.res)txt+=' · '+info.res;
+      const txt=info.text;
       el.textContent=txt;
       if(info.dateStr&&titleEl)titleEl.textContent='Imagen aérea (Esri · '+info.dateStr+')';
       S.lastAerialDate=txt;
@@ -1472,13 +1497,122 @@ function _drawUser(ctx,m,geojson,scale){
   ctx.restore();
 }
 
-/* Captura un mapa (cobertura opcional) a imagen base64 JPEG */
-async function captureMapImage(coberturaKey,userGeoJSON,bounds,w,h){
+const REPORT_MAPS=[
+  {id:'terra1997_fn2000',title:'TERRA 1997 / FONAFIFO 2000',backgroundKey:'terra1997',coverageKey:'fn2000'},
+  {id:'orto0507_fn2000',title:'Ortofoto 2005-2007 / FONAFIFO 2000',backgroundKey:'orto0507',coverageKey:'fn2000'},
+  {id:'orto1417_tb2012',title:'Ortofoto 2014-2017 / Tipos de Bosque 2012',backgroundKey:'orto1417',coverageKey:'tb2012'},
+  {id:'esri2021_cf2021',title:'Esri 2021 / Cobertura Forestal 2021',backgroundKey:'wb2021',coverageKey:'cf2021'},
+  {id:'esri2023_cf2023',title:'Esri 2023 / Cobertura Forestal 2023',backgroundKey:'wb2023',coverageKey:'cf2023'},
+  {id:'esri_current_pdf',title:'Imagen actual / Imagen del plano',currentImagery:true,pdfPlan:true}
+];
+
+function _bboxIntersects(a,b){return !(a[0]>b[2]||a[2]<b[0]||a[1]>b[3]||a[3]<b[1]);}
+function coverageClassesInView(key,bounds){
+  const gj=S.gjd[key],seen=new Set();
+  if(!gj)return [];
+  const bb=[bounds.getWest(),bounds.getSouth(),bounds.getEast(),bounds.getNorth()];
+  const viewPoly=(turf.bboxPolygon?turf.bboxPolygon(bb):null);
+  gj.features.forEach(f=>{
+    if(!f.geometry)return;
+    try{
+      if(!_bboxIntersects(turf.bbox(f),bb))return;
+      if(viewPoly&&turf.booleanIntersects&&!turf.booleanIntersects(f,viewPoly))return;
+      seen.add(f.properties.clase||'Sin clase');
+    }catch(e){}
+  });
+  return Array.from(seen).sort((a,b)=>String(a).localeCompare(String(b),'es'));
+}
+
+function _drawNorthArrow(ctx,w,h,scale){
+  const x=w-58*scale,y=30*scale,s=34*scale;
+  ctx.save();
+  ctx.fillStyle='rgba(255,255,255,0.86)';
+  ctx.strokeStyle='rgba(0,0,0,0.35)';
+  ctx.lineWidth=1*scale;
+  ctx.beginPath();ctx.arc(x,y+s*0.55,s*0.72,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#111';ctx.strokeStyle='#fff';ctx.lineWidth=2*scale;
+  ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-s*0.34,y+s);ctx.lineTo(x,y+s*0.72);ctx.lineTo(x+s*0.34,y+s);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.fillStyle='#111';ctx.font=`bold ${16*scale}px Arial`;ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillText('N',x,y-3*scale);
+  ctx.restore();
+}
+
+function _drawLegend(ctx,items,w,h,scale){
+  if(!items||!items.length)return;
+  ctx.save();
+  ctx.font=`${12*scale}px Arial`;
+  const pad=8*scale,rowH=18*scale,sw=13*scale;
+  const title='Simbología';
+  let maxW=ctx.measureText(title).width;
+  items.forEach(it=>{maxW=Math.max(maxW,ctx.measureText(it.label).width+sw+7*scale);});
+  const boxW=Math.min(w-24*scale,Math.max(150*scale,maxW+pad*2));
+  const boxH=pad*2+16*scale+items.length*rowH;
+  const x=12*scale,y=h-boxH-12*scale;
+  ctx.fillStyle='rgba(255,255,255,0.88)';
+  ctx.strokeStyle='rgba(0,0,0,0.30)';
+  ctx.lineWidth=1*scale;
+  ctx.fillRect(x,y,boxW,boxH);ctx.strokeRect(x,y,boxW,boxH);
+  ctx.fillStyle='#111';ctx.font=`bold ${12*scale}px Arial`;ctx.textBaseline='top';
+  ctx.fillText(title,x+pad,y+pad);
+  ctx.font=`${11*scale}px Arial`;
+  items.forEach((it,i)=>{
+    const yy=y+pad+18*scale+i*rowH;
+    ctx.fillStyle=it.color;ctx.fillRect(x+pad,yy+2*scale,sw,10*scale);
+    ctx.strokeStyle='rgba(0,0,0,0.45)';ctx.strokeRect(x+pad,yy+2*scale,sw,10*scale);
+    ctx.fillStyle='#111';ctx.fillText(it.label,x+pad+sw+7*scale,yy);
+  });
+  ctx.restore();
+}
+
+function legendItemsForReportMap(cfg,bounds){
+  if(cfg.pdfPlan)return [{label:'Imagen del plano (PDF)',color:'#000000'}];
+  if(!cfg.coverageKey)return [];
+  return coverageClassesInView(cfg.coverageKey,bounds).map(cls=>({label:cls,color:getColor(cfg.coverageKey,cls)}));
+}
+
+function reportMapSource(cfg){
+  if(cfg.pdfPlan){
+    return (S.lastAerialDate||'Fuente: Esri World Imagery')+' · Imagen del plano: '+(S.pdfName||'PDF cargado');
+  }
+  if(cfg.currentImagery)return S.lastAerialDate||'Fuente: Esri World Imagery';
+  const bg=cfg.backgroundKey&&ORTHO[cfg.backgroundKey]?ORTHO[cfg.backgroundKey].name:null;
+  const cov=cfg.coverageKey&&LM[cfg.coverageKey]?LM[cfg.coverageKey].label:null;
+  return 'Fondo: '+(bg||'Imagen aérea')+(cov?' · Cobertura: '+cov:'');
+}
+
+function _loadImage(url){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>resolve(img);
+    img.onerror=reject;
+    img.src=url;
+  });
+}
+
+async function _drawPdfPlan(ctx,m,pdfData,scale){
+  if(!pdfData||!pdfData.url||!pdfData.bounds)return;
+  const img=await _loadImage(pdfData.url);
+  const nw=m.latLngToContainerPoint(pdfData.bounds.getNorthWest());
+  const se=m.latLngToContainerPoint(pdfData.bounds.getSouthEast());
+  ctx.drawImage(img,nw.x*scale,nw.y*scale,(se.x-nw.x)*scale,(se.y-nw.y)*scale);
+}
+
+function _addReportBaseLayer(m,cfg){
+  if(cfg.currentImagery){
+    return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{crossOrigin:'anonymous',maxZoom:19});
+  }
+  if(cfg.backgroundKey&&ORTHO[cfg.backgroundKey])return buildOrthoLayer(cfg.backgroundKey,{opacity:1,crossOrigin:'anonymous',maxZoom:21});
+  return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{crossOrigin:'anonymous',maxZoom:19});
+}
+
+/* Captura un mapa combinado imagen/cobertura para el reporte Word */
+async function captureMapImage(cfg,userGeoJSON,bounds,w,h){
+  if(typeof cfg==='string')cfg={coverageKey:cfg,currentImagery:true,title:LM[cfg]?LM[cfg].label:cfg};
   const tmp=document.createElement('div');
   tmp.style.cssText='position:absolute;left:-10000px;top:0;width:'+w+'px;height:'+h+'px;background:#16281a;';
   document.body.appendChild(tmp);
   const m=L.map(tmp,{zoomControl:false,attributionControl:false,fadeAnimation:false,zoomAnimation:false,markerZoomAnimation:false,inertia:false});
-  const imagery=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{crossOrigin:'anonymous',maxZoom:19});
+  const imagery=_addReportBaseLayer(m,cfg);
   await new Promise(res=>{
     let done=false;const finish=()=>{if(!done){done=true;res();}};
     imagery.on('load',()=>setTimeout(finish,300));
@@ -1500,12 +1634,16 @@ async function captureMapImage(coberturaKey,userGeoJSON,bounds,w,h){
     try{ctx.drawImage(img,r.left-mapRect.left,r.top-mapRect.top,r.width,r.height);}catch(e){}
   });
   // Vectores sobre la imagen
-  if(coberturaKey)_drawCobertura(ctx,m,S.gjd[coberturaKey],coberturaKey,1,0.6);
+  if(cfg.coverageKey)_drawCobertura(ctx,m,S.gjd[cfg.coverageKey],cfg.coverageKey,1,0.48);
   _drawUser(ctx,m,userGeoJSON,1);
+  if(cfg.pdfPlan&&S.pdfPlanData)await _drawPdfPlan(ctx,m,S.pdfPlanData,1);
+  const viewBounds=m.getBounds();
+  _drawNorthArrow(ctx,w,h,1);
+  _drawLegend(ctx,legendItemsForReportMap(cfg,viewBounds),w,h,1);
 
   let dataUrl=null;
   try{
-    dataUrl=canvas.toDataURL('image/jpeg',0.85);
+    dataUrl=canvas.toDataURL('image/jpeg',0.88);
   }catch(e){
     // Las teselas "contaminaron" el canvas (sin CORS): generar versión solo-vectores
     const c2=document.createElement('canvas');c2.width=w;c2.height=h;
@@ -1514,9 +1652,12 @@ async function captureMapImage(coberturaKey,userGeoJSON,bounds,w,h){
     x2.strokeStyle='#24502e';x2.lineWidth=1;
     for(let gx=0;gx<w;gx+=40){x2.beginPath();x2.moveTo(gx,0);x2.lineTo(gx,h);x2.stroke();}
     for(let gy=0;gy<h;gy+=40){x2.beginPath();x2.moveTo(0,gy);x2.lineTo(w,gy);x2.stroke();}
-    if(coberturaKey)_drawCobertura(x2,m,S.gjd[coberturaKey],coberturaKey,1,0.75);
+    if(cfg.coverageKey)_drawCobertura(x2,m,S.gjd[cfg.coverageKey],cfg.coverageKey,1,0.65);
     _drawUser(x2,m,userGeoJSON,1);
-    try{dataUrl=c2.toDataURL('image/jpeg',0.85);}catch(e2){dataUrl=null;}
+    if(cfg.pdfPlan&&S.pdfPlanData)await _drawPdfPlan(x2,m,S.pdfPlanData,1);
+    _drawNorthArrow(x2,w,h,1);
+    _drawLegend(x2,legendItemsForReportMap(cfg,viewBounds),w,h,1);
+    try{dataUrl=c2.toDataURL('image/jpeg',0.88);}catch(e2){dataUrl=null;}
   }
   m.remove();tmp.remove();
   return dataUrl;
@@ -1534,7 +1675,7 @@ function _fechaLarga(){
 }
 
 /* Construye el cuerpo HTML del documento Word */
-function _buildDocBody(images,aerialImg){
+function _buildDocBody(reportMaps){
   const R=S.lastResults,uHa=S.lastUserHa,uN=S.lastUserN;
   const azul='#1a5e1c';
   let h='';
@@ -1553,38 +1694,21 @@ function _buildDocBody(images,aerialImg){
   h+='</table>';
 
   // Sección de mapas
-  h+='<p style="font-size:12pt;font-weight:bold;color:'+azul+';border-bottom:1px solid '+azul+';margin:14px 0 8px">1. Mapas de análisis por capa</p>';
-  h+='<table style="width:100%;border-collapse:collapse">';
-  const keys=Object.keys(LM);
-  for(let i=0;i<keys.length;i+=2){
-    h+='<tr>';
-    for(let j=i;j<i+2;j++){
-      if(j<keys.length){
-        const k=keys[j];const img=images[k];
-        h+='<td style="width:50%;border:1px solid #ccc;padding:6px;vertical-align:top;text-align:center">';
-        h+='<p style="font-size:9.5pt;font-weight:bold;color:'+azul+';margin:0 0 4px">'+LM[k].label+'</p>';
-        if(img)h+='<img src="'+img+'" width="320" style="border:1px solid #999"/>';
-        else h+='<p style="font-size:8pt;color:#a00">[No fue posible capturar este mapa]</p>';
-        if(k==='fn2005')h+='<p style="font-size:7pt;color:#7a5c10;text-align:left;margin:4px 0 0;line-height:1.35">⚙️ '+FN2005_NOTE+'</p>';
-        h+='</td>';
-      } else {
-        h+='<td style="width:50%;border:none"></td>';
-      }
-    }
-    h+='</tr>';
-  }
-  h+='</table>';
-
-  // Imagen aérea
-  h+='<p style="font-size:12pt;font-weight:bold;color:'+azul+';border-bottom:1px solid '+azul+';margin:16px 0 8px">2. Imagen aérea de referencia</p>';
-  h+='<div style="text-align:center">';
-  if(aerialImg)h+='<img src="'+aerialImg+'" width="430" style="border:1px solid #999"/>';
-  else h+='<p style="font-size:8pt;color:#a00">[No fue posible capturar la imagen aérea]</p>';
-  h+='<p style="font-size:8.5pt;color:#444;margin:4px 0 0">'+(S.lastAerialDate||'Fuente: Esri World Imagery')+'</p>';
-  h+='</div>';
+  h+='<p style="font-size:12pt;font-weight:bold;color:'+azul+';border-bottom:1px solid '+azul+';margin:14px 0 8px">1. Mapas combinados imagen aérea / cobertura</p>';
+  h+='<p style="font-size:8.5pt;color:#555;margin:0 0 8px;line-height:1.35">Cada mapa usa la imagen aérea como fondo y la cobertura semitransparente encima. La simbología incluida corresponde únicamente a clases presentes en la vista del mapa.</p>';
+  reportMaps.forEach((entry,i)=>{
+    const cfg=entry.cfg,img=entry.img;
+    h+='<div style="text-align:center;page-break-inside:avoid;margin:0 0 16px">';
+    h+='<p style="font-size:11pt;font-weight:bold;color:'+azul+';margin:0 0 5px">'+(i+1)+'. '+cfg.title+'</p>';
+    if(img)h+='<img src="'+img+'" width="620" style="border:1px solid #999"/>';
+    else h+='<p style="font-size:8pt;color:#a00">[No fue posible capturar este mapa]</p>';
+    h+='<p style="font-size:8.5pt;color:#444;margin:4px 0 0;line-height:1.35">'+entry.source+'</p>';
+    if(cfg.pdfPlan&&!S.pdfPlanData)h+='<p style="font-size:8pt;color:#a00;margin:2px 0 0">No se incluyó imagen del plano porque no había PDF cargado al exportar.</p>';
+    h+='</div>';
+  });
 
   // Cuadro de superficies (consolidado)
-  h+='<p style="font-size:12pt;font-weight:bold;color:'+azul+';border-bottom:1px solid '+azul+';margin:16px 0 8px">3. Cuadro de superficies por tipo de cobertura</p>';
+  h+='<p style="font-size:12pt;font-weight:bold;color:'+azul+';border-bottom:1px solid '+azul+';margin:16px 0 8px">2. Cuadro de superficies por tipo de cobertura</p>';
   h+='<table style="width:100%;border-collapse:collapse;font-size:9pt">';
   h+='<tr style="background:'+azul+';color:#fff">'+
      '<th style="border:1px solid #999;padding:5px">Mapa de cobertura</th>'+
@@ -1629,7 +1753,7 @@ function _buildDocBody(images,aerialImg){
      'En las capas Cobertura Forestal 2021/2023, los "vacíos" corresponden a áreas sin bosque dentro del predio. '+
      'Las geometrías se procesan a resolución completa (sin simplificación; redondeo de coordenadas a 0.11 m) y las áreas se calculan en proyección CRTM05/EPSG:5367, de modo que coinciden con QGIS sobre los datos originales; '+
      'para fines registrales o de alta precisión deben emplearse las capas originales en CRTM05/EPSG:5367 mediante QGIS. '+
-     'Las imágenes aéreas provienen de Esri World Imagery; la fecha indicada corresponde a la tesela consultada en el centro del predio. '+
+     'Las imágenes aéreas de los mapas provienen de SNIT-IGN y Esri World Imagery/Wayback según el año indicado; la fecha de la imagen actual corresponde a la tesela consultada en el centro del predio. '+
      'Documento generado por el Visor de Cobertura Forestal — PNLQ (SINAC-ACC).</p>';
   return h;
 }
@@ -1656,23 +1780,28 @@ async function exportWord(){
   await new Promise(r=>setTimeout(r,30));
   try{
     const ug=S.lastUserGeoJSON,bounds=S.lastBounds;
-    const W=720,H=500;
-    const images={};
-    const keys=Object.keys(LM);
-    let p=8;
-    for(const k of keys){
-      setProg(p,'Capturando mapa: '+LM[k].label+'…');
-      await new Promise(r=>setTimeout(r,30));
-      try{images[k]=await captureMapImage(k,ug,bounds,W,H);}catch(e){images[k]=null;console.warn(k,e);}
-      p+=12;
+    const W=960,H=640;
+    const reportImages=[];
+    const center=bounds.getCenter();
+    if(!S.lastAerialDate||S.lastAerialDate==='Fuente: Esri World Imagery'){
+      try{
+        const info=await getEsriImageryDateText(center.lat,center.lng);
+        if(info&&info.text)S.lastAerialDate=info.text;
+      }catch(e){console.warn('current imagery date for report:',e);}
     }
-    setProg(p,'Capturando imagen aérea…');
-    await new Promise(r=>setTimeout(r,30));
-    let aerial=null;
-    try{aerial=await captureMapImage(null,ug,bounds,W,H);}catch(e){console.warn('aerial',e);}
+    let p=8;
+    const maps=REPORT_MAPS;
+    for(const cfg of maps){
+      setProg(p,'Capturando mapa: '+cfg.title+'…');
+      await new Promise(r=>setTimeout(r,30));
+      let img=null;
+      try{img=await captureMapImage(cfg,ug,bounds,W,H);}catch(e){console.warn(cfg.id,e);}
+      reportImages.push({cfg,img,source:reportMapSource(cfg)});
+      p+=Math.max(8,Math.floor(72/maps.length));
+    }
     setProg(88,'Construyendo documento Word…');
     await new Promise(r=>setTimeout(r,30));
-    const body=_buildDocBody(images,aerial);
+    const body=_buildDocBody(reportImages);
     _downloadDoc(body,'Analisis_cobertura_PNLQ_'+_stamp()+'.doc');
     setProg(100,'✅ Documento generado');
     toast('✅ Documento Word generado');
@@ -1747,6 +1876,10 @@ checks = {
     "Botón Word": 'id="btn-word"' in HTML and "exportWord()" in HTML,
     "Función exportWord": "async function exportWord()" in HTML,
     "Captura de mapa (canvas)": "async function captureMapImage" in HTML,
+    "Mapas Word combinados": "const REPORT_MAPS=" in HTML and "TERRA 1997 / FONAFIFO 2000" in HTML and "Imagen actual / Imagen del plano" in HTML,
+    "Word una columna centrada": 'width="620"' in HTML and "Mapas combinados imagen aérea / cobertura" in HTML and "page-break-inside:avoid" in HTML,
+    "Word simbología y norte": "function _drawLegend" in HTML and "function _drawNorthArrow" in HTML and "Simbología" in HTML,
+    "Word imagen plano PDF": "pdfPlanData" in HTML and "Imagen del plano: " in HTML,
     "Composita teselas (drawImage)": "ctx.drawImage(img" in HTML,
     "Dibuja cobertura en canvas": "function _drawCobertura" in HTML,
     "Dibuja predio en canvas": "function _drawUser" in HTML,
