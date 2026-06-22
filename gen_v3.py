@@ -32,8 +32,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-22-word-report-maps-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-word-report-maps-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-22-pdf-plan-qc-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-pdf-plan-qc-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -381,7 +381,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-22-word-report-maps-v1';
+const APP_VERSION='2026-06-22-pdf-plan-qc-v1';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -946,18 +946,36 @@ function collectGeomCoords(geom,out){
   return out;
 }
 
+function projectCoordCRTM05(c){
+  return (Math.abs(c[0])>180||Math.abs(c[1])>90)?[c[0],c[1]]:proj4('EPSG:4326','EPSG:5367',[c[0],c[1]]);
+}
+
+function collectProjectedRings(geom,out){
+  if(!geom)return out;
+  if(geom.type==='Polygon'){
+    geom.coordinates.forEach(r=>{if(r.length>1)out.push(r.map(projectCoordCRTM05));});
+  }else if(geom.type==='MultiPolygon'){
+    geom.coordinates.forEach(p=>p.forEach(r=>{if(r.length>1)out.push(r.map(projectCoordCRTM05));}));
+  }else if(geom.type==='GeometryCollection'){
+    geom.geometries.forEach(g=>collectProjectedRings(g,out));
+  }
+  return out;
+}
+
 function userProjectedBBox(gj){
   const coords=[];
   (gj.features||[]).forEach(f=>collectGeomCoords(f.geometry,coords));
   if(!coords.length)throw new Error('El polígono cargado no tiene coordenadas válidas');
+  const rings=[];
+  (gj.features||[]).forEach(f=>collectProjectedRings(f.geometry,rings));
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
   coords.forEach(c=>{
-    const p=(Math.abs(c[0])>180||Math.abs(c[1])>90)?c:proj4('EPSG:4326','EPSG:5367',[c[0],c[1]]);
+    const p=projectCoordCRTM05(c);
     minX=Math.min(minX,p[0]);minY=Math.min(minY,p[1]);maxX=Math.max(maxX,p[0]);maxY=Math.max(maxY,p[1]);
   });
   const width=maxX-minX,height=maxY-minY;
   if(width<=0||height<=0)throw new Error('No se pudo medir el polígono cargado');
-  return{minX,minY,maxX,maxY,width,height,ratio:width/height};
+  return{minX,minY,maxX,maxY,width,height,ratio:width/height,rings};
 }
 
 function getUserLatLngBounds(){
@@ -982,6 +1000,120 @@ function robustComponentBox(xs,ys,pad,w,h){
   const y1=Math.ceil(qSorted(ys,1-q))+pad;
   const x=Math.max(0,x0),y=Math.max(0,y0);
   return{x,y,w:Math.min(w-1,x1)-x+1,h:Math.min(h-1,y1)-y+1};
+}
+
+function targetRingSamples(target,box){
+  const rings=[];
+  const spacing=Math.max(6,Math.min(18,Math.round(Math.max(box.w,box.h)*0.012)));
+  const toBox=p=>[
+    ((p[0]-target.minX)/target.width)*(box.w-1),
+    ((target.maxY-p[1])/target.height)*(box.h-1)
+  ];
+  (target.rings||[]).forEach(r=>{
+    const n=(r.length>2&&r[0][0]===r[r.length-1][0]&&r[0][1]===r[r.length-1][1])?r.length-1:r.length;
+    if(n<2)return;
+    const pts=[];
+    for(let i=0;i<n;i++){
+      const a=toBox(r[i]),b=toBox(r[(i+1)%n]);
+      const len=Math.hypot(b[0]-a[0],b[1]-a[1]);
+      const steps=Math.max(1,Math.ceil(len/spacing));
+      for(let s=0;s<steps;s++){
+        const t=s/steps;
+        pts.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]);
+      }
+    }
+    if(pts.length)rings.push(pts);
+  });
+  return rings;
+}
+
+function hasDarkNear(occ,w,h,x,y,r){
+  const cx=Math.round(x),cy=Math.round(y),rr=r*r;
+  for(let yy=Math.max(0,cy-r);yy<=Math.min(h-1,cy+r);yy++){
+    const dy=yy-cy,row=yy*w;
+    for(let xx=Math.max(0,cx-r);xx<=Math.min(w-1,cx+r);xx++){
+      const dx=xx-cx;
+      if(dx*dx+dy*dy<=rr&&occ[row+xx])return true;
+    }
+  }
+  return false;
+}
+
+function longestMissFraction(misses){
+  if(!misses.length)return 1;
+  let best=0,cur=0;
+  for(let i=0;i<misses.length*2;i++){
+    if(misses[i%misses.length]){cur++;best=Math.max(best,Math.min(cur,misses.length));}
+    else cur=0;
+  }
+  return best/misses.length;
+}
+
+function pdfBoundaryFit(box,target,data,pageW,pageH,isDark){
+  const occ=new Uint8Array(box.w*box.h);
+  let ink=0;
+  for(let yy=box.y;yy<box.y+box.h;yy++){
+    const row=(yy-box.y)*box.w;
+    for(let xx=box.x;xx<box.x+box.w;xx++){
+      if(isDark(yy*pageW+xx)){occ[row+(xx-box.x)]=1;ink++;}
+    }
+  }
+  const rings=targetRingSamples(target,box);
+  const radius=Math.max(5,Math.min(24,Math.round(Math.max(box.w,box.h)*0.018)));
+  let hits=0,total=0,maxGap=0;
+  rings.forEach(samples=>{
+    const misses=[];
+    samples.forEach(p=>{
+      const hit=hasDarkNear(occ,box.w,box.h,p[0],p[1],radius);
+      if(hit)hits++;
+      total++;
+      misses.push(!hit);
+    });
+    maxGap=Math.max(maxGap,longestMissFraction(misses));
+  });
+  return{coverage:total?hits/total:0,maxGap,total,radius,ink};
+}
+
+function pdfBoxRatioErr(box,target){return Math.abs(Math.log((box.w/box.h)/target.ratio));}
+function shrinkPdfBox(box,side,delta){
+  const b=Object.assign({},box);
+  if(side==='l'){b.x+=delta;b.w-=delta;}
+  if(side==='r'){b.w-=delta;}
+  if(side==='t'){b.y+=delta;b.h-=delta;}
+  if(side==='b'){b.h-=delta;}
+  return b;
+}
+
+function evalPdfBox(box,orig,target,data,pageW,pageH,isDark,minW,minH){
+  if(box.w<minW||box.h<minH||box.x<0||box.y<0||box.x+box.w>pageW||box.y+box.h>pageH)return null;
+  const ratioErr=pdfBoxRatioErr(box,target);
+  if(ratioErr>0.85)return null;
+  const fit=pdfBoundaryFit(box,target,data,pageW,pageH,isDark);
+  const shrink=1-(box.w*box.h)/(orig.w*orig.h);
+  const score=(1-fit.coverage)*8+fit.maxGap*4+ratioErr*2+shrink*0.45;
+  return{box,fit,ratioErr,score};
+}
+
+function refinePdfBoxForTarget(seed,target,data,pageW,pageH,isDark,minW,minH){
+  let best=evalPdfBox(seed,seed,target,data,pageW,pageH,isDark,minW,minH);
+  if(!best)return null;
+  const sides=['l','r','t','b'],fracs=[0.04,0.07,0.10,0.14,0.18,0.23,0.28,0.34];
+  for(let pass=0;pass<3;pass++){
+    let improved=false;
+    for(const side of sides){
+      const base=best.box;
+      const span=(side==='l'||side==='r')?base.w:base.h;
+      for(const f of fracs){
+        const delta=Math.max(2,Math.round(span*f));
+        const cand=evalPdfBox(shrinkPdfBox(base,side,delta),seed,target,data,pageW,pageH,isDark,minW,minH);
+        if(cand&&cand.score<best.score-0.03){
+          best=cand;improved=true;
+        }
+      }
+    }
+    if(!improved)break;
+  }
+  return best;
 }
 
 function detectPdfPredioBox(canvas,userGeoJSON){
@@ -1029,15 +1161,21 @@ function detectPdfPredioBox(canvas,userGeoJSON){
       const pad=Math.max(4,Math.round(Math.min(w,h)*0.004));
       const box=robustComponentBox(xs,ys,pad,w,h);
       if(box.w<minW||box.h<minH)continue;
-      const ratio=box.w/box.h;
-      const ratioErr=Math.abs(Math.log(ratio/target.ratio));
-      if(ratioErr>0.55)continue;
-      const boxFrac=(box.w*box.h)/total;
-      const score=ratioErr*4-Math.log(area)/9-boxFrac;
-      if(!best||score<best.score)best={score,box,area,ratio,ratioErr,targetRatio:target.ratio};
+      const roughRatioErr=pdfBoxRatioErr(box,target);
+      if(roughRatioErr>0.85)continue;
+      const refined=refinePdfBoxForTarget(box,target,data,w,h,isDark,minW,minH);
+      if(!refined)continue;
+      if(refined.fit.coverage<0.56||refined.fit.maxGap>0.38)continue;
+      const ratio=refined.box.w/refined.box.h;
+      const boxFrac=(refined.box.w*refined.box.h)/total;
+      const score=refined.score-Math.log(area)/18-boxFrac;
+      if(!best||score<best.score)best={
+        score,box:refined.box,area,ratio,ratioErr:refined.ratioErr,targetRatio:target.ratio,
+        fit:refined.fit
+      };
     }
   }
-  if(!best)throw new Error('No se pudo identificar un contorno del predio compatible con el polígono cargado');
+  if(!best)throw new Error('No se cargó el plano: el contorno detectado no coincide lo suficiente con el polígono cargado. Así se evita montar una imagen desplazada o recortada por etiquetas del PDF.');
   return best;
 }
 
@@ -1093,7 +1231,8 @@ async function handlePdfPlanUpload(file){
     document.getElementById('cb-pdf-plan').checked=true;
     const info=document.getElementById('pdf-info');
     info.style.display='block';
-    info.textContent=`${file.name} · página 1/${rendered.pages} · contorno detectado · fondo transparente`;
+    const fitTxt=detected.fit?` · calce ${Math.round(detected.fit.coverage*100)}%`:'';
+    info.textContent=`${file.name} · página 1/${rendered.pages} · contorno validado${fitTxt} · fondo transparente`;
     map.fitBounds(bounds,{padding:[25,25]});
     restackLayers();
     setProg(100,'Plano PDF cargado');
@@ -1895,6 +2034,7 @@ checks = {
     "Favicon": "favicon.ico" in HTML,
     "Plano PDF referencial": 'id="pdf-fi"' in HTML and "function handlePdfPlanUpload" in HTML and "pdfjsLib" in HTML,
     "Detector contorno PDF": "function detectPdfPredioBox" in HTML and "cropPdfToDetectedPredio" in HTML and "contorno detectado" in HTML,
+    "Control calce PDF": "function pdfBoundaryFit" in HTML and "refinePdfBoxForTarget" in HTML and "contorno validado" in HTML,
     "Line art PDF transparente": "function makePdfLineArtTransparent" in HTML and "pdfPlanPane" in HTML and "fondo transparente" in HTML,
     "Toggle Imagen del plano": 'id="cb-pdf-plan"' in HTML and "Imagen del plano" in HTML and "function togglePdfPlan" in HTML,
     "Coordenadas CRTM05 en barra": "CR05/CRTM05 E:" in HTML and "EPSG:5367" in HTML,

@@ -52,7 +52,8 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 - Carga de plano PDF como capa referencial: detecta visualmente el contorno del
   predio en la primera página, recorta el dibujo, elimina el fondo blanco y lo
   muestra como trazos negros sobre todas las capas, sin alterar la geometría
-  oficial ni los cálculos de cobertura.
+  oficial ni los cálculos de cobertura. El recorte se valida contra el perímetro
+  del polígono cargado para evitar montajes desplazados por rótulos del PDF.
 - Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
 - Exportación a documento **Word** (.doc) con mapas combinados imagen/cobertura
