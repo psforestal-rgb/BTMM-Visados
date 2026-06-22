@@ -32,8 +32,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-22-membrete-docx-pdf-manual-v2">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-membrete-docx-pdf-manual-v2">
+<link rel="icon" href="favicon.ico?v=2026-06-22-docx-open-fix-v3">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-docx-open-fix-v3">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -396,7 +396,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-22-membrete-docx-pdf-manual-v2';
+const APP_VERSION='2026-06-22-docx-open-fix-v3';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -2232,10 +2232,11 @@ async function _buildDocx(bodyHtml){
   const zip=await JSZip.loadAsync(MEMBRETE_DOTX_B64,{base64:true});
   // Registrar el tipo de contenido de la parte HTML incrustada
   let ct=await zip.file('[Content_Types].xml').async('string');
+  ct=ct.replace('wordprocessingml.template.main+xml','wordprocessingml.document.main+xml');
   if(ct.indexOf('Extension="htm"')<0){
     ct=ct.replace('</Types>','<Default Extension="htm" ContentType="text/html"/></Types>');
-    zip.file('[Content_Types].xml',ct);
   }
+  zip.file('[Content_Types].xml',ct);
   // Parte HTML con el cuerpo del informe (el membrete proviene del .dotx)
   const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'+
     '<head><meta charset="utf-8"><title>Análisis de Cobertura Forestal — PNLQ</title>'+
