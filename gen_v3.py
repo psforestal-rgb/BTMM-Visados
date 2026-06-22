@@ -32,8 +32,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-22-docx-open-fix-v3">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-docx-open-fix-v3">
+<link rel="icon" href="favicon.ico?v=2026-06-22-manual-word-maps-v4">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-manual-word-maps-v4">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -93,6 +93,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .pdf-tools .hint{font-size:8px;color:#9bc99a;line-height:1.35;margin-bottom:4px}
 .pdf-tools .row{display:grid;grid-template-columns:1fr 1fr;gap:4px}
 .pdf-tools .stat{font-size:8px;color:#d4a02a;line-height:1.35;margin-top:4px}
+.pdf-pair-list{display:flex;flex-direction:column;gap:3px;margin-top:5px}
+.pdf-pair{display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:8px;color:#cde7c7;background:#0b1c0c;border:1px solid #244626;border-radius:3px;padding:3px 4px}
+.pdf-pair button{border:1px solid #5a1d1d;background:#3b0c0c;color:#ff8f8f;border-radius:3px;font-size:8px;line-height:1;padding:3px 5px;cursor:pointer}
 
 /* placeholder panels */
 .placeholder-panel{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center;padding:20px 14px;gap:10px}
@@ -295,10 +298,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
         <div class="pdf-tools" id="pdf-tools">
           <div class="hint" id="pdf-manual-hint">Clic en un vértice del plano y luego en su vértice del polígono. El segundo clic se ajusta al vértice vectorial más cercano.</div>
           <div class="row">
-            <button class="btn bs" id="btn-pdf-undo" onclick="undoPdfManualPoint()">↶ Punto</button>
+            <button class="btn bs" id="btn-pdf-undo" onclick="undoPdfManualPoint()">↶ Último</button>
             <button class="btn bp" id="btn-pdf-apply" onclick="applyPdfManualFit()" disabled>Ajustar</button>
           </div>
           <div class="stat" id="pdf-manual-stat">0/3 pares mínimos</div>
+          <div class="pdf-pair-list" id="pdf-pair-list"></div>
         </div>
         <button class="btn bd" id="btn-pdf-clear" style="display:none" onclick="clearPdfPlanLayer()">✖ Limpiar PDF</button>
         <div id="pdf-info" style="display:none;font-size:8px;color:#9bc99a;line-height:1.35;margin-top:4px"></div>
@@ -396,7 +400,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-22-docx-open-fix-v3';
+const APP_VERSION='2026-06-22-manual-word-maps-v4';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -448,7 +452,7 @@ const S={lfl:{},gjd:{},uGJ:null,uLfl:null,op:0.75,
   pdfLayer:null,pdfPlanData:null,pdfName:null,pdfOpacity:1,pdfManual:{active:false,pairs:[],pending:null,markers:[]}};
 const miniMaps={};
 // Encuadre ajustado al predio para todos los mini-mapas (zoom al predio)
-const MM_FIT={padding:[12,12],maxZoom:17};
+const MM_FIT={padding:[6,6],maxZoom:18};
 
 /* ── MAP SETUP ── */
 const map=L.map('mc',{center:[9.58,-83.85],zoom:11,maxZoom:22});
@@ -537,7 +541,7 @@ const ORTHO={
     attribution:'Esri World Imagery (Wayback 2023-12-07)'}
 };
 // Emparejamiento cronológico capa de cobertura → imagen aérea para los mini-mapas
-const PAIR={fn2000:'terra1997', fn2005:'orto0507', tb2012:'orto1417', cf2021:'wb2021', cf2023:'wb2023'};
+const PAIR={fn2000:'orto0507', fn2005:'orto0507', tb2012:'orto1417', cf2021:'wb2021', cf2023:'wb2023'};
 
 // Aclaración del ajuste aplicado a la capa FONAFIFO 2005
 const FN2005_NOTE='La capa de cobertura 2005 fue ajustada respecto a FONAFIFO 2000 en CR05 / CRTM05, EPSG:5367, mediante una traslación rígida uniforme de +210 m en X y −150 m en Y. No se modificó la geometría interna: solo se desplazaron los polígonos como un bloque, conservando áreas, vértices y topología.';
@@ -956,7 +960,7 @@ function removePdfManualMarkers(){
 function resetPdfManualControl(){
   const m=S.pdfManual;
   removePdfManualMarkers();
-  m.active=false;m.pairs=[];
+  m.active=false;m.pairs=[];m.pending=null;
   const tools=document.getElementById('pdf-tools');if(tools)tools.classList.remove('on');
   const btn=document.getElementById('btn-pdf-manual');if(btn)btn.textContent='🎯 Ajuste manual';
   updatePdfManualUi();
@@ -965,19 +969,28 @@ function resetPdfManualControl(){
 function updatePdfManualUi(){
   const m=S.pdfManual,n=(m.pairs||[]).length;
   const stat=document.getElementById('pdf-manual-stat');
-  if(stat)stat.textContent=(m.pending?'Seleccione vértice vectorial · ':'')+n+'/3 pares mínimos';
+  if(stat)stat.textContent=(m.pending?'Seleccione vértice vectorial · ':'')+n+' pares marcados · mínimo 3, puede agregar más';
   const apply=document.getElementById('btn-pdf-apply');
   if(apply)apply.disabled=n<3;
   const hint=document.getElementById('pdf-manual-hint');
   if(hint)hint.textContent=m.pending?
     'Ahora haga clic cerca del vértice correspondiente del polígono. El punto se ajustará al vértice vectorial más cercano.':
-    'Clic en un vértice del plano y luego en su vértice del polígono. Repita al menos 3 veces.';
+    'Clic en un vértice del plano y luego en su vértice del polígono. Repita al menos 3 veces; puede agregar más pares para mejorar el ajuste.';
+  const list=document.getElementById('pdf-pair-list');
+  if(list){
+    list.innerHTML=(m.pairs||[]).map((p,i)=>
+      '<div class="pdf-pair"><span>Par '+(i+1)+' · plano → vector</span><button type="button" onclick="removePdfManualPair('+i+')">Eliminar</button></div>'
+    ).join('');
+  }
 }
 
 function showPdfPlanControls(show){
   const row=document.getElementById('pdf-toggle-row');if(row)row.style.display=show?'flex':'none';
   const clear=document.getElementById('btn-pdf-clear');if(clear)clear.style.display=show?'block':'none';
-  const manual=document.getElementById('btn-pdf-manual');if(manual)manual.style.display=show?'block':'none';
+  const allow=show&&S.pdfPlanData&&S.pdfPlanData.allowManual;
+  const manual=document.getElementById('btn-pdf-manual');if(manual)manual.style.display=allow?'block':'none';
+  const tools=document.getElementById('pdf-tools');
+  if(!allow&&tools)tools.classList.remove('on');
 }
 
 function pdfAffinePoint(data,x,y){
@@ -1057,7 +1070,7 @@ function setPdfPlanData(data,infoText){
   restackLayers();
 }
 
-function makePdfLineArtTransparent(canvas,threshold=242,bufferPx=1){
+function makePdfLineArtTransparent(canvas,threshold=242,bufferPx=2){
   const ctx=canvas.getContext('2d',{willReadFrequently:true});
   const img=ctx.getImageData(0,0,canvas.width,canvas.height);
   const d=img.data,w=canvas.width,h=canvas.height,total=w*h;
@@ -1074,7 +1087,6 @@ function makePdfLineArtTransparent(canvas,threshold=242,bufferPx=1){
     if(!saturated&&lum<90){d[i]=0;d[i+1]=0;d[i+2]=0;}
   }
   if(bufferPx>0){
-    const src=new Uint8ClampedArray(d);
     for(let y=0;y<h;y++){
       for(let x=0;x<w;x++){
         const p=y*w+x,o=p*4;
@@ -1089,8 +1101,9 @@ function makePdfLineArtTransparent(canvas,threshold=242,bufferPx=1){
           }
         }
         if(found>=0){
-          const qo=found*4;
-          d[o]=src[qo];d[o+1]=src[qo+1];d[o+2]=src[qo+2];d[o+3]=75;
+          const dist=Math.hypot((found%w)-x,Math.floor(found/w)-y);
+          const alpha=Math.max(115,Math.round(230-(dist/Math.max(1,bufferPx))*75));
+          d[o]=255;d[o+1]=255;d[o+2]=255;d[o+3]=alpha;
         }
       }
     }
@@ -1418,6 +1431,7 @@ function addPdfManualMarker(latlng,color,label){
 
 function togglePdfManualMode(){
   if(!S.pdfPlanData){toast('Cargue primero un PDF',true);return;}
+  if(!S.pdfPlanData.allowManual){toast('El ajuste manual solo se habilita cuando el calce automático falla por incongruencias.',true,4500);return;}
   S.pdfManual.active=!S.pdfManual.active;
   const tools=document.getElementById('pdf-tools');
   if(tools)tools.classList.toggle('on',S.pdfManual.active);
@@ -1430,12 +1444,23 @@ function togglePdfManualMode(){
 function undoPdfManualPoint(){
   const m=S.pdfManual;
   if(m.pending){
+    const marker=m.pending.marker;
     m.pending=null;
-    const marker=m.markers.pop();if(marker)map.removeLayer(marker);
+    if(marker){try{map.removeLayer(marker);}catch(e){} m.markers=(m.markers||[]).filter(x=>x!==marker);}
   }else if(m.pairs.length){
-    m.pairs.pop();
-    for(let i=0;i<2;i++){const marker=m.markers.pop();if(marker)map.removeLayer(marker);}
+    removePdfManualPair(m.pairs.length-1);
+    return;
   }
+  updatePdfManualUi();
+}
+
+function removePdfManualPair(idx){
+  const m=S.pdfManual;
+  if(idx<0||idx>=m.pairs.length)return;
+  const pair=m.pairs[idx];
+  (pair.markers||[]).forEach(marker=>{try{map.removeLayer(marker);}catch(e){}});
+  m.markers=(m.markers||[]).filter(marker=>!(pair.markers||[]).includes(marker));
+  m.pairs.splice(idx,1);
   updatePdfManualUi();
 }
 
@@ -1471,6 +1496,41 @@ function fitAffineFromPairs(pairs){
   return[ax[0],ax[1],ax[2],ay[0],ay[1],ay[2]];
 }
 
+function inverseAffinePixel(affine,latlng){
+  const p=L.CRS.EPSG3857.project(latlng),a=affine;
+  const det=a[0]*a[4]-a[1]*a[3];
+  if(Math.abs(det)<1e-9)return null;
+  const dx=p.x-a[2],dy=p.y-a[5];
+  return[(a[4]*dx-a[1]*dy)/det,(-a[3]*dx+a[0]*dy)/det];
+}
+
+async function cropPdfDataAfterManualFit(baseData,affine,userGeoJSON){
+  const verts=collectUserVertices();
+  if(verts.length<3)return Object.assign({},baseData,{affine});
+  const pts=verts.map(v=>inverseAffinePixel(affine,v)).filter(p=>p&&isFinite(p[0])&&isFinite(p[1]));
+  if(pts.length<3)return Object.assign({},baseData,{affine});
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  pts.forEach(p=>{minX=Math.min(minX,p[0]);minY=Math.min(minY,p[1]);maxX=Math.max(maxX,p[0]);maxY=Math.max(maxY,p[1]);});
+  const w=baseData.imageWidth,h=baseData.imageHeight;
+  const pad=Math.max(14,Math.round(Math.max(maxX-minX,maxY-minY)*0.04));
+  const x0=Math.max(0,Math.floor(minX-pad)),y0=Math.max(0,Math.floor(minY-pad));
+  const x1=Math.min(w,Math.ceil(maxX+pad)),y1=Math.min(h,Math.ceil(maxY+pad));
+  if(x1-x0<20||y1-y0<20)return Object.assign({},baseData,{affine});
+  const img=await _loadImage(baseData.url);
+  const out=document.createElement('canvas');
+  out.width=x1-x0;out.height=y1-y0;
+  out.getContext('2d',{willReadFrequently:true}).drawImage(img,x0,y0,out.width,out.height,0,0,out.width,out.height);
+  const a=affine;
+  const croppedAffine=[a[0],a[1],a[2]+a[0]*x0+a[1]*y0,a[3],a[4],a[5]+a[3]*x0+a[4]*y0];
+  return Object.assign({},baseData,{
+    url:out.toDataURL('image/png'),
+    imageWidth:out.width,
+    imageHeight:out.height,
+    affine:croppedAffine,
+    manualCrop:true
+  });
+}
+
 function onPdfManualMapClick(e){
   const m=S.pdfManual;
   if(!m.active||!S.pdfPlanData)return;
@@ -1478,13 +1538,13 @@ function onPdfManualMapClick(e){
   if(!m.pending){
     const px=latLngToPdfPixel(S.pdfPlanData,e.latlng);
     if(!pdfClickInsideImage(S.pdfPlanData,px)){toast('Haga clic sobre la imagen del plano',true,3500);return;}
-    m.pending={src:px,latlng:e.latlng,marker:addPdfManualMarker(e.latlng,'#f0c040','Plano')};
+    m.pending={src:px,latlng:e.latlng,marker:addPdfManualMarker(e.latlng,'#f0c040','Plano '+(m.pairs.length+1))};
   }else{
     const snap=nearestUserVertex(e.latlng);
     if(!snap){toast('No hay vértices vectoriales para ajustar',true);return;}
     const dst=[snap.latlng.lng,snap.latlng.lat];
-    m.pairs.push({src:m.pending.src,dst});
-    addPdfManualMarker(snap.latlng,'#56b356','Vector');
+    const dstMarker=addPdfManualMarker(snap.latlng,'#56b356','Vector '+(m.pairs.length+1));
+    m.pairs.push({src:m.pending.src,dst,markers:[m.pending.marker,dstMarker]});
     m.pending=null;
     if(snap.dist>35)toast('Vértice ajustado al punto vectorial más cercano',false,2500);
   }
@@ -1492,16 +1552,18 @@ function onPdfManualMapClick(e){
 }
 map.on('click',onPdfManualMapClick);
 
-function applyPdfManualFit(){
+async function applyPdfManualFit(){
   const m=S.pdfManual;
   if(!S.pdfPlanData||m.pairs.length<3){toast('Marque al menos 3 pares plano/vector',true);return;}
   try{
     const affine=fitAffineFromPairs(m.pairs);
-    const data=Object.assign({},S.pdfPlanData,{affine});
+    let data=await cropPdfDataAfterManualFit(S.pdfPlanData,affine,S.uGJ);
+    data.allowManual=false;
+    data.manualAdjusted=true;
     data.bounds=pdfAffineBounds(data);
-    setPdfPlanData(data,(S.pdfName||'PDF cargado')+' · ajuste manual con '+m.pairs.length+' pares · fondo transparente');
+    setPdfPlanData(data,(S.pdfName||'PDF cargado')+' · ajuste manual con '+m.pairs.length+' pares · recortado · fondo transparente');
     removePdfManualMarkers();
-    m.active=false;
+    m.active=false;m.pairs=[];m.pending=null;
     const tools=document.getElementById('pdf-tools');if(tools)tools.classList.remove('on');
     const btn=document.getElementById('btn-pdf-manual');if(btn)btn.textContent='🎯 Ajuste manual';
     map.fitBounds(data.bounds,{padding:[25,25]});
@@ -1534,7 +1596,7 @@ async function handlePdfPlanUpload(file){
     setProg(82,autoOk?'Georreferenciando recorte del plano…':'Cargando plano para ajuste manual…');
     clearPdfPlanLayer();
     const pdfUrl=crop.toDataURL('image/png');
-    const data={url:pdfUrl,bounds,name:file.name,imageWidth:crop.width,imageHeight:crop.height,affine:null};
+    const data={url:pdfUrl,bounds,name:file.name,imageWidth:crop.width,imageHeight:crop.height,affine:null,allowManual:!autoOk,autoFit:autoOk};
     const fitTxt=(autoOk&&detected.fit)?` · calce ${Math.round(detected.fit.coverage*100)}%`:'';
     const infoText=autoOk?
       `${file.name} · página 1/${rendered.pages} · contorno validado${fitTxt} · fondo transparente`:
@@ -1947,12 +2009,12 @@ function _drawUser(ctx,m,geojson,scale){
 }
 
 const REPORT_MAPS=[
-  {id:'terra1997_fn2000',title:'TERRA 1997 / FONAFIFO 2000',backgroundKey:'terra1997',coverageKey:'fn2000'},
   {id:'orto0507_fn2000',title:'Ortofoto 2005-2007 / FONAFIFO 2000',backgroundKey:'orto0507',coverageKey:'fn2000'},
+  {id:'orto0507_fn2005',title:'Ortofoto 2005-2007 / FONAFIFO 2005',backgroundKey:'orto0507',coverageKey:'fn2005'},
   {id:'orto1417_tb2012',title:'Ortofoto 2014-2017 / Tipos de Bosque 2012',backgroundKey:'orto1417',coverageKey:'tb2012'},
   {id:'esri2021_cf2021',title:'Esri 2021 / Cobertura Forestal 2021',backgroundKey:'wb2021',coverageKey:'cf2021'},
   {id:'esri2023_cf2023',title:'Esri 2023 / Cobertura Forestal 2023',backgroundKey:'wb2023',coverageKey:'cf2023'},
-  {id:'esri_current_pdf',title:'Imagen actual / Imagen del plano',currentImagery:true,pdfPlan:true}
+  {id:'esri_current_pdf',title:'Imagen aérea más actual disponible / Dibujo del plano',currentImagery:true,pdfPlan:true}
 ];
 
 function _bboxIntersects(a,b){return !(a[0]>b[2]||a[2]<b[0]||a[1]>b[3]||a[3]<b[1]);}
@@ -2014,14 +2076,17 @@ function _drawLegend(ctx,items,w,h,scale){
 }
 
 function legendItemsForReportMap(cfg,bounds){
-  if(cfg.pdfPlan)return [{label:'Imagen del plano (PDF)',color:'#000000'}];
+  if(cfg.pdfPlan)return [
+    {label:'Dibujo del plano (PDF)',color:'#000000'},
+    {label:'Predio de análisis',color:'#f0c040'}
+  ];
   if(!cfg.coverageKey)return [];
   return coverageClassesInView(cfg.coverageKey,bounds).map(cls=>({label:cls,color:getColor(cfg.coverageKey,cls)}));
 }
 
 function reportMapSource(cfg){
   if(cfg.pdfPlan){
-    return (S.lastAerialDate||'Fuente: Esri World Imagery')+' · Imagen del plano: '+(S.pdfName||'PDF cargado');
+    return (S.lastAerialDate||'Fuente: Esri World Imagery · imagen más actual disponible')+' · Dibujo del plano: '+(S.pdfName||'PDF cargado');
   }
   if(cfg.currentImagery)return S.lastAerialDate||'Fuente: Esri World Imagery';
   const bg=cfg.backgroundKey&&ORTHO[cfg.backgroundKey]?ORTHO[cfg.backgroundKey].name:null;
@@ -2095,11 +2160,12 @@ async function captureMapImage(cfg,userGeoJSON,bounds,w,h){
   });
   // Vectores sobre la imagen
   if(cfg.coverageKey)_drawCobertura(ctx,m,S.gjd[cfg.coverageKey],cfg.coverageKey,1,0.48);
-  _drawUser(ctx,m,userGeoJSON,1);
   if(cfg.pdfPlan&&S.pdfPlanData)await _drawPdfPlan(ctx,m,S.pdfPlanData,1);
+  _drawUser(ctx,m,userGeoJSON,1);
   const viewBounds=m.getBounds();
+  const legendItems=legendItemsForReportMap(cfg,viewBounds);
   _drawNorthArrow(ctx,w,h,1);
-  _drawLegend(ctx,legendItemsForReportMap(cfg,viewBounds),w,h,1);
+  _drawLegend(ctx,legendItems,w,h,1);
 
   let dataUrl=null;
   try{
@@ -2113,14 +2179,14 @@ async function captureMapImage(cfg,userGeoJSON,bounds,w,h){
     for(let gx=0;gx<w;gx+=40){x2.beginPath();x2.moveTo(gx,0);x2.lineTo(gx,h);x2.stroke();}
     for(let gy=0;gy<h;gy+=40){x2.beginPath();x2.moveTo(0,gy);x2.lineTo(w,gy);x2.stroke();}
     if(cfg.coverageKey)_drawCobertura(x2,m,S.gjd[cfg.coverageKey],cfg.coverageKey,1,0.65);
-    _drawUser(x2,m,userGeoJSON,1);
     if(cfg.pdfPlan&&S.pdfPlanData)await _drawPdfPlan(x2,m,S.pdfPlanData,1);
+    _drawUser(x2,m,userGeoJSON,1);
     _drawNorthArrow(x2,w,h,1);
-    _drawLegend(x2,legendItemsForReportMap(cfg,viewBounds),w,h,1);
+    _drawLegend(x2,legendItems,w,h,1);
     try{dataUrl=c2.toDataURL('image/jpeg',0.88);}catch(e2){dataUrl=null;}
   }
   m.remove();tmp.remove();
-  return dataUrl;
+  return {img:dataUrl,legendItems,viewBounds};
 }
 
 function _stamp(){
@@ -2132,6 +2198,19 @@ function _fechaLarga(){
   const d=new Date();
   return d.getDate()+' de '+_MESES[d.getMonth()]+' de '+d.getFullYear()+', '+
     String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+function _legendHtml(items){
+  if(!items||!items.length)return '<p style="font-size:8pt;color:#777;margin:3px 0 0">Simbología: sin clases de cobertura visibles en esta vista.</p>';
+  let h='<table style="margin:4px auto 0;border-collapse:collapse;font-size:8pt">';
+  h+='<tr><td colspan="2" style="border:1px solid #bbb;background:#eef5ee;font-weight:bold;padding:3px 6px;text-align:center">Simbología del mapa</td></tr>';
+  items.forEach(it=>{
+    h+='<tr><td style="border:1px solid #bbb;padding:3px 5px;width:18px;text-align:center">'+
+      '<span style="display:inline-block;width:11px;height:11px;background:'+it.color+';border:1px solid #555"></span></td>'+
+      '<td style="border:1px solid #bbb;padding:3px 6px;text-align:left">'+it.label+'</td></tr>';
+  });
+  h+='</table>';
+  return h;
 }
 
 /* Construye el cuerpo HTML del documento Word */
@@ -2162,6 +2241,7 @@ function _buildDocBody(reportMaps){
     h+='<p style="font-size:11pt;font-weight:bold;color:'+azul+';margin:0 0 5px">'+(i+1)+'. '+cfg.title+'</p>';
     if(img)h+='<img src="'+img+'" width="620" style="border:1px solid #999"/>';
     else h+='<p style="font-size:8pt;color:#a00">[No fue posible capturar este mapa]</p>';
+    h+=_legendHtml(entry.legendItems);
     h+='<p style="font-size:8.5pt;color:#444;margin:4px 0 0;line-height:1.35">'+entry.source+'</p>';
     if(cfg.pdfPlan&&!S.pdfPlanData)h+='<p style="font-size:8pt;color:#a00;margin:2px 0 0">No se incluyó imagen del plano porque no había PDF cargado al exportar.</p>';
     h+='</div>';
@@ -2285,9 +2365,9 @@ async function exportWord(){
     for(const cfg of maps){
       setProg(p,'Capturando mapa: '+cfg.title+'…');
       await new Promise(r=>setTimeout(r,30));
-      let img=null;
-      try{img=await captureMapImage(cfg,ug,bounds,W,H);}catch(e){console.warn(cfg.id,e);}
-      reportImages.push({cfg,img,source:reportMapSource(cfg)});
+      let cap={img:null,legendItems:[]};
+      try{cap=await captureMapImage(cfg,ug,bounds,W,H);}catch(e){console.warn(cfg.id,e);}
+      reportImages.push({cfg,img:cap.img,legendItems:cap.legendItems||[],source:reportMapSource(cfg)});
       p+=Math.max(8,Math.floor(72/maps.length));
     }
     setProg(88,'Construyendo documento Word…');
@@ -2372,15 +2452,15 @@ checks = {
     "Parser fecha Esri": "function parseEsriImageryResults" in HTML and "function formatEsriDate" in HTML,
     "Endpoint identify Esri": "World_Imagery/MapServer/identify" in HTML,
     "Default activo cf2023": 'id="cb-cf2023" checked' in HTML,
-    "Zoom al predio (MM_FIT maxZoom 17)": "MM_FIT={padding:[12,12],maxZoom:17}" in HTML,
+    "Zoom al predio (MM_FIT maxZoom 18)": "MM_FIT={padding:[6,6],maxZoom:18}" in HTML,
     "Mini-mapas usan MM_FIT": HTML.count("fitBounds(bounds,MM_FIT)") >= 2,
     "Botón Word": 'id="btn-word"' in HTML and "exportWord()" in HTML,
     "Función exportWord": "async function exportWord()" in HTML,
     "Captura de mapa (canvas)": "async function captureMapImage" in HTML,
-    "Mapas Word combinados": "const REPORT_MAPS=" in HTML and "TERRA 1997 / FONAFIFO 2000" in HTML and "Imagen actual / Imagen del plano" in HTML,
+    "Mapas Word combinados": "const REPORT_MAPS=" in HTML and "Ortofoto 2005-2007 / FONAFIFO 2000" in HTML and "Imagen aérea más actual disponible / Dibujo del plano" in HTML,
     "Word una columna centrada": 'width="620"' in HTML and "Mapas combinados imagen aérea / cobertura" in HTML and "page-break-inside:avoid" in HTML,
-    "Word simbología y norte": "function _drawLegend" in HTML and "function _drawNorthArrow" in HTML and "Simbología" in HTML,
-    "Word imagen plano PDF": "pdfPlanData" in HTML and "Imagen del plano: " in HTML,
+    "Word simbología y norte": "function _drawLegend" in HTML and "function _drawNorthArrow" in HTML and "Simbología del mapa" in HTML,
+    "Word imagen plano PDF": "pdfPlanData" in HTML and "Dibujo del plano: " in HTML,
     "Composita teselas (drawImage)": "ctx.drawImage(img" in HTML,
     "Dibuja cobertura en canvas": "function _drawCobertura" in HTML,
     "Dibuja predio en canvas": "function _drawUser" in HTML,
