@@ -32,8 +32,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-22-word-export-fix-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-word-export-fix-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-22-membrete-docx-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-membrete-docx-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -381,7 +381,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-22-word-export-fix-v1';
+const APP_VERSION='2026-06-22-membrete-docx-v1';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -1823,7 +1823,6 @@ function _buildDocBody(reportMaps){
   h+='<div style="text-align:center;border-bottom:2px solid '+azul+';padding-bottom:8px;margin-bottom:14px">';
   h+='<p style="font-size:15pt;font-weight:bold;color:'+azul+';margin:0">Análisis de Cobertura Forestal</p>';
   h+='<p style="font-size:11pt;margin:2px 0">Parque Nacional Los Quetzales (PNLQ)</p>';
-  h+='<p style="font-size:9pt;color:#444;margin:0">SINAC — Área de Conservación Central — Bloque Tapantí Macizo de la Muerte</p>';
   h+='</div>';
   // Datos del predio
   h+='<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:14px">';
@@ -1898,14 +1897,44 @@ function _buildDocBody(reportMaps){
   return h;
 }
 
-function _downloadDoc(bodyHtml,filename){
-  const head='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'+
+/* Membrete institucional SINAC-ACC (plantilla .dotx oficial) embebido en base64.
+   Se reutiliza tal cual para conservar encabezado, pie y estilos institucionales;
+   el cuerpo del informe se incrusta como altChunk HTML dentro del .docx. */
+const MEMBRETE_DOTX_B64="{{MEMBRETE_DOTX_B64}}";
+
+/* Construye un .docx real a partir del membrete oficial, incrustando el cuerpo
+   del informe (HTML) como altChunk. El encabezado/pie del membrete se aplican
+   automáticamente a todas las páginas. Requiere Microsoft Word para visualizar
+   el contenido incrustado. */
+async function _buildDocx(bodyHtml){
+  if(typeof JSZip==='undefined')throw new Error('JSZip no está disponible');
+  const zip=await JSZip.loadAsync(MEMBRETE_DOTX_B64,{base64:true});
+  // Registrar el tipo de contenido de la parte HTML incrustada
+  let ct=await zip.file('[Content_Types].xml').async('string');
+  if(ct.indexOf('Extension="htm"')<0){
+    ct=ct.replace('</Types>','<Default Extension="htm" ContentType="text/html"/></Types>');
+    zip.file('[Content_Types].xml',ct);
+  }
+  // Parte HTML con el cuerpo del informe (el membrete proviene del .dotx)
+  const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'+
     '<head><meta charset="utf-8"><title>Análisis de Cobertura Forestal — PNLQ</title>'+
-    '<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->'+
-    '<style>@page{size:21.59cm 27.94cm;margin:2cm}body{font-family:Calibri,Arial,sans-serif;color:#222}table{page-break-inside:auto}tr{page-break-inside:avoid}img{max-width:100%}</style>'+
-    '</head><body>';
-  const tail='</body></html>';
-  const blob=new Blob(['\ufeff'+head+bodyHtml+tail],{type:'application/msword'});
+    '<style>body{font-family:Calibri,Arial,sans-serif;color:#222;margin:0}table{border-collapse:collapse;page-break-inside:auto}tr{page-break-inside:avoid}img{max-width:100%}</style>'+
+    '</head><body>'+bodyHtml+'</body></html>';
+  zip.file('word/afchunk.htm','﻿'+html);
+  // Relación altChunk hacia la parte HTML
+  const relId='rIdMembreteReport';
+  let rels=await zip.file('word/_rels/document.xml.rels').async('string');
+  rels=rels.replace('</Relationships>','<Relationship Id="'+relId+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk" Target="afchunk.htm"/></Relationships>');
+  zip.file('word/_rels/document.xml.rels',rels);
+  // Insertar el contenido del informe al inicio del cuerpo, conservando el sectPr
+  // (y por tanto el encabezado/pie del membrete) de la plantilla.
+  let doc=await zip.file('word/document.xml').async('string');
+  doc=doc.replace('<w:body>','<w:body><w:altChunk r:id="'+relId+'"/>');
+  zip.file('word/document.xml',doc);
+  return await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+}
+
+function _downloadBlob(blob,filename){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;a.download=filename;document.body.appendChild(a);a.click();
@@ -1942,7 +1971,8 @@ async function exportWord(){
     setProg(88,'Construyendo documento Word…');
     await new Promise(r=>setTimeout(r,30));
     const body=_buildDocBody(reportImages);
-    _downloadDoc(body,'Analisis_cobertura_PNLQ_'+_stamp()+'.doc');
+    const blob=await _buildDocx(body);
+    _downloadBlob(blob,'Analisis_cobertura_PNLQ_'+_stamp()+'.docx');
     setProg(100,'✅ Documento generado');
     toast('✅ Documento Word generado');
     setTimeout(()=>showProg(false),600);
@@ -1966,6 +1996,15 @@ window.addEventListener('load',async()=>{
 </html>"""
 
 HTML = HTML.replace("{{CF2021}}", CF2021).replace("{{CF2023}}", CF2023).replace("{{FN2000}}", FN2000).replace("{{FN2005}}", FN2005).replace("{{TB2012}}", TB2012)
+
+# Membrete institucional SINAC-ACC: se embebe la plantilla .dotx en base64 para
+# que la exportación a Word genere un .docx con el encabezado/pie oficiales.
+import os, base64
+_membrete_path = os.environ.get("MEMBRETE_DOTX_PATH") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "membrete_sinac.dotx")
+with open(_membrete_path, "rb") as _mf:
+    MEMBRETE_DOTX_B64 = base64.b64encode(_mf.read()).decode("ascii")
+HTML = HTML.replace("{{MEMBRETE_DOTX_B64}}", MEMBRETE_DOTX_B64)
 
 out = "/mnt/user-data/outputs/visor_cobertura_pnlq.html"
 with open(out, "w", encoding="utf-8") as f:
@@ -2023,7 +2062,8 @@ checks = {
     "Composita teselas (drawImage)": "ctx.drawImage(img" in HTML,
     "Dibuja cobertura en canvas": "function _drawCobertura" in HTML,
     "Dibuja predio en canvas": "function _drawUser" in HTML,
-    "Genera .doc Word": "application/msword" in HTML,
+    "Genera .docx Word con membrete": "_buildDocx" in HTML and "wordprocessingml.document" in HTML,
+    "Membrete .dotx embebido": "MEMBRETE_DOTX_B64" in HTML and "{{MEMBRETE_DOTX_B64}}" not in HTML and "altChunk" in HTML,
     "Tabla consolidada en Word": "_buildDocBody" in HTML,
     "Tarjeta Imágenes aéreas": "Imágenes aéreas" in HTML,
     "Config ORTHO": "const ORTHO=" in HTML,

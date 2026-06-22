@@ -56,23 +56,30 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   del polígono cargado para evitar montajes desplazados por rótulos del PDF.
 - Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
-- Exportación a documento **Word** (.doc) con mapas combinados imagen/cobertura
-  en una sola columna, centrados, con simbología por vista y flecha norte.
+- Exportación a documento **Word** (.docx) sobre el **membrete institucional
+  oficial SINAC-ACC** (encabezado y pie en todas las páginas), con mapas
+  combinados imagen/cobertura en una sola columna, centrados, con simbología por
+  vista y flecha norte. El cuerpo del informe se incrusta en la plantilla oficial
+  (`membrete_sinac.dotx`) mediante `altChunk`; para ver el contenido incrustado se
+  recomienda abrir el archivo con Microsoft Word.
 
 ## Estructura del repositorio
 
 ```
-index.html      Visor completo y autónomo (datos embebidos)
-gen_v3.py       Pipeline Python que genera index.html a partir de los GPKG
-version.json    Versión publicada para forzar actualización del navegador
-favicon.ico     Icono del sitio
-README.md       Este archivo
+index.html          Visor completo y autónomo (datos y membrete embebidos)
+gen_v3.py           Pipeline Python que genera index.html a partir de los GPKG
+membrete_sinac.dotx Plantilla Word del membrete institucional SINAC-ACC (export .docx)
+version.json        Versión publicada para forzar actualización del navegador
+favicon.ico         Icono del sitio
+README.md           Este archivo
 .gitignore
 ```
 
 > `gen_v3.py` requiere los GeoPackage originales y `layers_b64.json` (no incluidos por
 > tamaño/sensibilidad). Puede leer `layers_b64.json` junto al script o desde la
-> variable `LAYERS_B64_PATH`. El visor publicado (`index.html`) es autosuficiente.
+> variable `LAYERS_B64_PATH`. El membrete se toma de `membrete_sinac.dotx` (junto al
+> script o desde `MEMBRETE_DOTX_PATH`) y se embebe en base64. El visor publicado
+> (`index.html`) es autosuficiente.
 
 ## Créditos y fuentes
 
