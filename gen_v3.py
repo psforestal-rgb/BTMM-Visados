@@ -32,8 +32,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-22-word-clean-wayback2021-v6">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-word-clean-wayback2021-v6">
+<link rel="icon" href="favicon.ico?v=2026-06-22-modules-2021-fallback-v7">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-modules-2021-fallback-v7">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -47,8 +47,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 #logo{width:34px;height:34px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
 
 /* ── TABS ── */
-#tabs{background:#071607;border-bottom:1px solid #1e4020;display:flex;padding:0 14px;gap:1px;flex-shrink:0}
-.tab{background:none;border:none;border-bottom:3px solid transparent;color:var(--txt2);padding:9px 18px;font-size:11px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap;letter-spacing:.2px;font-family:inherit}
+#tabs{background:#071607;border-bottom:1px solid #1e4020;display:flex;padding:0 10px;gap:1px;flex-shrink:0;overflow-x:auto;scrollbar-width:thin}
+#tabs::-webkit-scrollbar{height:3px}
+#tabs::-webkit-scrollbar-thumb{background:#3d6040;border-radius:2px}
+.tab{background:none;border:none;border-bottom:3px solid transparent;color:var(--txt2);padding:9px 12px;font-size:11px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap;letter-spacing:.2px;font-family:inherit;flex:0 0 auto}
 .tab:hover{color:var(--txt);background:rgba(255,255,255,.04)}
 .tab.active{color:var(--gold);border-bottom-color:var(--gold);background:rgba(212,160,42,.07)}
 .tab .tb{font-size:12px;margin-right:5px}
@@ -132,12 +134,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .mm-div .leaflet-tile{filter:contrast(1.12) saturate(1.10) brightness(1.03)}
 
 /* results table */
-.rtbl{width:100%;border-collapse:collapse;font-size:9.5px;margin-bottom:10px}
-.rtbl th{background:#1a3b1c;color:var(--txt2);padding:4px 5px;text-align:center;border:1px solid #2a5a2a;font-size:9px;vertical-align:middle}
-.rtbl td{padding:3px 5px;border:1px solid #2a5a2a;color:var(--txt);vertical-align:middle}
-.rtbl .td-layer{font-weight:700;text-align:center;background:#0f2a10;color:var(--gold);font-size:9px;line-height:1.4}
-.rtbl .td-void{color:var(--warn);font-style:italic}
-.rtbl .td-total td{background:#1a3b1c;color:var(--acc2);font-weight:700}
+.rtbl{width:100%;border-collapse:collapse;font-size:9.5px;margin-bottom:10px;background:#f7fbf5;color:#111}
+.rtbl th{background:#dfeadf;color:#111;padding:4px 5px;text-align:center;border:1px solid #9eb09e;font-size:9px;vertical-align:middle}
+.rtbl td{padding:3px 5px;border:1px solid #9eb09e;color:#111;vertical-align:middle;background:#fff}
+.rtbl .td-layer{font-weight:700;text-align:center;background:#e8f1e7;color:#111;font-size:9px;line-height:1.4}
+.rtbl .td-void{color:#111;font-style:normal}
+.rtbl .td-total td{background:#dce9dc;color:#111;font-weight:700}
 .td-num{text-align:right}
 .bar-wrap{height:5px;background:#163318;border-radius:2px;overflow:hidden;margin-top:2px}
 .bar-fill{height:100%;border-radius:2px;transition:width .35s}
@@ -172,9 +174,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
 <!-- MODULE TABS -->
 <div id="tabs">
-  <button class="tab active" data-tab="cobertura" onclick="switchTab('cobertura')"><span class="tb">🌿</span>Cobertura Forestal</button>
-  <button class="tab" data-tab="suelos" onclick="switchTab('suelos')"><span class="tb">🌱</span>Suelos Forestales<span class="soon">Próximamente</span></button>
-  <button class="tab" data-tab="antecedentes" onclick="switchTab('antecedentes')"><span class="tb">📋</span>Antecedentes y PNE<span class="soon">Próximamente</span></button>
+  <button class="tab active" data-tab="carga" onclick="switchTab('carga')"><span class="tb">📂</span>Carga de archivos</button>
+  <button class="tab" data-tab="asp" onclick="switchTab('asp')"><span class="tb">🏞️</span>Áreas Silvestres Protegidas<span class="soon">Próximamente</span></button>
+  <button class="tab" data-tab="fincas-pne" onclick="switchTab('fincas-pne')"><span class="tb">🏛️</span>Fincas estatales y PNE<span class="soon">Próximamente</span></button>
+  <button class="tab" data-tab="cobertura" onclick="switchTab('cobertura')"><span class="tb">🌿</span>Cobertura Forestal</button>
+  <button class="tab" data-tab="terrenos" onclick="switchTab('terrenos')"><span class="tb">🌱</span>Terrenos forestales<span class="soon">Próximamente</span></button>
+  <button class="tab" data-tab="fuentes" onclick="switchTab('fuentes')"><span class="tb">💧</span>Fuentes de agua y AP<span class="soon">Próximamente</span></button>
 </div>
 
 <!-- MAIN -->
@@ -183,8 +188,93 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <!-- SIDEBAR -->
 <div id="sidebar">
 
-  <!-- ①  PANEL: COBERTURA FORESTAL -->
-  <div id="panel-cobertura" class="tab-panel">
+  <!-- ①  PANEL: CARGA DE ARCHIVOS -->
+  <div id="panel-carga" class="tab-panel">
+    <div class="pnl">
+      <div class="pt">📂 Polígono de análisis</div>
+      <div id="dz" onclick="document.getElementById('fi').click()">
+        <div class="di">⬆️</div>
+        <div class="dt">Cargar polígono de análisis</div>
+        <div class="ds">SHP · GPKG · GPX · KML · KMZ · GeoJSON</div>
+        <div class="ds" style="color:#4a6e4c;margin-top:2px">Arrastre aquí o haga clic</div>
+      </div>
+      <input type="file" id="fi" accept=".shp,.gpkg,.gpx,.kml,.kmz,.geojson,.json,.zip">
+      <div id="uli"><b id="uln"></b><br><span id="ulf"></span></div>
+      <button class="btn bd" id="btn-clear" style="display:none" onclick="clearUserLayer()">✖ Limpiar capa</button>
+    </div>
+    <div class="pnl">
+      <div class="pt">📄 Plano PDF</div>
+      <button class="btn bp" id="btn-pdf-load" type="button" style="margin-top:0" onclick="document.getElementById('pdf-fi').click()">📄 Cargar PDF</button>
+      <input type="file" id="pdf-fi" accept=".pdf" style="display:none">
+      <label class="ltog" id="pdf-toggle-row" style="display:none;margin-top:5px">
+        <input type="checkbox" id="cb-pdf-plan" checked><span style="flex:1">Imagen del plano</span><span class="lbadge">ref</span>
+      </label>
+      <button class="btn bs" id="btn-pdf-manual" style="display:none" onclick="togglePdfManualMode()">🎯 Ajuste manual</button>
+      <div class="pdf-tools" id="pdf-tools">
+        <div class="hint" id="pdf-manual-hint">Clic en un vértice del plano y luego en su vértice del polígono. El segundo clic se ajusta al vértice vectorial más cercano.</div>
+        <div class="row">
+          <button class="btn bs" id="btn-pdf-undo" onclick="undoPdfManualPoint()">↶ Último</button>
+          <button class="btn bp" id="btn-pdf-apply" onclick="applyPdfManualFit()" disabled>Ajustar</button>
+        </div>
+        <div class="stat" id="pdf-manual-stat">0/3 pares mínimos</div>
+        <div class="pdf-pair-list" id="pdf-pair-list"></div>
+      </div>
+      <button class="btn bd" id="btn-pdf-clear" style="display:none" onclick="clearPdfPlanLayer()">✖ Limpiar PDF</button>
+      <div id="pdf-info" style="display:none;font-size:8px;color:#9bc99a;line-height:1.35;margin-top:4px"></div>
+    </div>
+    <div style="font-size:8px;color:#3a5e3c;text-align:center;padding:3px">PNLQ–ACC-SINAC · v1.2 · Datos: SINAC / FONAFIFO<br>Resolución completa · áreas en CRTM05/EPSG:5367</div>
+  </div>
+
+  <!-- ②  PANEL: ÁREAS SILVESTRES PROTEGIDAS -->
+  <div id="panel-asp" class="tab-panel" style="display:none">
+    <div class="placeholder-panel">
+      <div class="ph-icon">🏞️</div>
+      <div class="ph-title">Áreas Silvestres Protegidas</div>
+      <div class="ph-badge">Módulo en preparación</div>
+      <div class="ph-desc">Contenido por definir.<br>Comuníquese con el administrador del visor para activar este módulo.</div>
+      <div class="ph-items">
+        <div class="ph-item">
+          <div class="ph-item-title">Límites oficiales ASP</div>
+          <div class="ph-item-desc">Parques nacionales, reservas biológicas y zonas protectoras</div>
+        </div>
+        <div class="ph-item">
+          <div class="ph-item-title">Zona de amortiguamiento</div>
+          <div class="ph-item-desc">Intersección del predio con áreas reguladas y colindancias</div>
+        </div>
+        <div class="ph-item">
+          <div class="ph-item-title">Restricciones ambientales</div>
+          <div class="ph-item-desc">Reporte de afectaciones por categoría de manejo</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③  PANEL: FINCAS ESTATALES Y PNE -->
+  <div id="panel-fincas-pne" class="tab-panel" style="display:none">
+    <div class="placeholder-panel">
+      <div class="ph-icon">🏛️</div>
+      <div class="ph-title">Fincas estatales y PNE</div>
+      <div class="ph-badge">Módulo en preparación</div>
+      <div class="ph-desc">Contenido por definir.<br>Comuníquese con el administrador del visor para activar este módulo.</div>
+      <div class="ph-items">
+        <div class="ph-item">
+          <div class="ph-item-title">Patrimonio Natural del Estado</div>
+          <div class="ph-item-desc">Art. 13 Ley Forestal 7575 · Fincas estatales y dominio público</div>
+        </div>
+        <div class="ph-item">
+          <div class="ph-item-title">Antecedentes registrales</div>
+          <div class="ph-item-desc">Consulta de planos catastrales e inscripción</div>
+        </div>
+        <div class="ph-item">
+          <div class="ph-item-title">Afectaciones legales</div>
+          <div class="ph-item-desc">Restricciones, traslapes y servidumbres registradas</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④  PANEL: COBERTURA FORESTAL -->
+  <div id="panel-cobertura" class="tab-panel" style="display:none">
     <div class="pnl">
       <div class="pt">🧭 Referencias</div>
       <label class="ltog"><input type="checkbox" id="cb-ref"><span style="flex:1">Nombres, límites y caminos</span></label>
@@ -279,37 +369,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div style="font-size:9px;color:var(--txt2);text-align:center"><span id="ortho-opv">100</span>%</div></div>
     </div>
     <div class="pnl">
-      <div class="pt">📂 Polígono de análisis</div>
-      <div id="dz" onclick="document.getElementById('fi').click()">
-        <div class="di">⬆️</div>
-        <div class="dt">Cargar polígono de análisis</div>
-        <div class="ds">SHP · GPKG · GPX · KML · KMZ · GeoJSON</div>
-        <div class="ds" style="color:#4a6e4c;margin-top:2px">Arrastre aquí o haga clic</div>
-      </div>
-      <input type="file" id="fi" accept=".shp,.gpkg,.gpx,.kml,.kmz,.geojson,.json,.zip">
-      <div id="uli"><b id="uln"></b><br><span id="ulf"></span></div>
-      <div style="margin:7px 0 5px;border-top:1px solid #28562b;padding-top:6px">
-        <div style="font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Plano PDF</div>
-        <button class="btn bp" id="btn-pdf-load" type="button" style="margin-top:0" onclick="document.getElementById('pdf-fi').click()">📄 Cargar PDF</button>
-        <input type="file" id="pdf-fi" accept=".pdf" style="display:none">
-        <label class="ltog" id="pdf-toggle-row" style="display:none;margin-top:5px">
-          <input type="checkbox" id="cb-pdf-plan" checked><span style="flex:1">Imagen del plano</span><span class="lbadge">ref</span>
-        </label>
-        <button class="btn bs" id="btn-pdf-manual" style="display:none" onclick="togglePdfManualMode()">🎯 Ajuste manual</button>
-        <div class="pdf-tools" id="pdf-tools">
-          <div class="hint" id="pdf-manual-hint">Clic en un vértice del plano y luego en su vértice del polígono. El segundo clic se ajusta al vértice vectorial más cercano.</div>
-          <div class="row">
-            <button class="btn bs" id="btn-pdf-undo" onclick="undoPdfManualPoint()">↶ Último</button>
-            <button class="btn bp" id="btn-pdf-apply" onclick="applyPdfManualFit()" disabled>Ajustar</button>
-          </div>
-          <div class="stat" id="pdf-manual-stat">0/3 pares mínimos</div>
-          <div class="pdf-pair-list" id="pdf-pair-list"></div>
-        </div>
-        <button class="btn bd" id="btn-pdf-clear" style="display:none" onclick="clearPdfPlanLayer()">✖ Limpiar PDF</button>
-        <div id="pdf-info" style="display:none;font-size:8px;color:#9bc99a;line-height:1.35;margin-top:4px"></div>
-      </div>
+      <div class="pt">🔬 Análisis</div>
       <button class="btn bp" id="btn-analyze" disabled onclick="runAnalysis()">🔬 Calcular intersección</button>
-      <button class="btn bd" id="btn-clear" style="display:none" onclick="clearUserLayer()">✖ Limpiar capa</button>
+      <div style="font-size:8px;color:#4a6e4c;padding:4px 4px 0;line-height:1.4">El cálculo usa el polígono y el plano PDF cargados en el módulo Carga de archivos.</div>
     </div>
     <div class="pnl">
       <div class="pt">🔆 Opacidad</div>
@@ -319,11 +381,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div style="font-size:8px;color:#3a5e3c;text-align:center;padding:3px">PNLQ–ACC-SINAC · v1.2 · Datos: SINAC / FONAFIFO<br>Resolución completa · áreas en CRTM05/EPSG:5367</div>
   </div>
 
-  <!-- ②  PANEL: SUELOS FORESTALES -->
-  <div id="panel-suelos" class="tab-panel" style="display:none">
+  <!-- ⑤  PANEL: TERRENOS FORESTALES -->
+  <div id="panel-terrenos" class="tab-panel" style="display:none">
     <div class="placeholder-panel">
       <div class="ph-icon">🌱</div>
-      <div class="ph-title">Suelos Forestales</div>
+      <div class="ph-title">Terrenos forestales</div>
       <div class="ph-badge">Módulo en preparación</div>
       <div class="ph-desc">Contenido por definir.<br>Comuníquese con el administrador del visor para activar este módulo.</div>
       <div class="ph-items">
@@ -343,25 +405,25 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
   </div>
 
-  <!-- ③  PANEL: ANTECEDENTES Y PNE -->
-  <div id="panel-antecedentes" class="tab-panel" style="display:none">
+  <!-- ⑥  PANEL: FUENTES DE AGUA Y AP -->
+  <div id="panel-fuentes" class="tab-panel" style="display:none">
     <div class="placeholder-panel">
-      <div class="ph-icon">📋</div>
-      <div class="ph-title">Antecedentes y PNE</div>
+      <div class="ph-icon">💧</div>
+      <div class="ph-title">Fuentes de agua y AP</div>
       <div class="ph-badge">Módulo en preparación</div>
       <div class="ph-desc">Contenido por definir.<br>Comuníquese con el administrador del visor para activar este módulo.</div>
       <div class="ph-items">
         <div class="ph-item">
-          <div class="ph-item-title">Patrimonio Natural del Estado</div>
-          <div class="ph-item-desc">Art. 13 Ley Forestal 7575 · Áreas protegidas</div>
+          <div class="ph-item-title">Nacientes y cursos de agua</div>
+          <div class="ph-item-desc">Ríos, quebradas, nacientes y cuerpos de agua</div>
         </div>
         <div class="ph-item">
-          <div class="ph-item-title">Antecedentes registrales</div>
-          <div class="ph-item-desc">Consulta de planos catastrales e inscripción</div>
+          <div class="ph-item-title">Áreas de protección</div>
+          <div class="ph-item-desc">Buffers y zonas reguladas por la Ley Forestal</div>
         </div>
         <div class="ph-item">
-          <div class="ph-item-title">Afectaciones legales</div>
-          <div class="ph-item-desc">Zonas de protección, restricciones y servidumbres</div>
+          <div class="ph-item-title">Reporte hídrico</div>
+          <div class="ph-item-desc">Intersecciones del predio con AP y fuentes cercanas</div>
         </div>
       </div>
     </div>
@@ -401,7 +463,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-22-word-clean-wayback2021-v6';
+const APP_VERSION='2026-06-22-modules-2021-fallback-v7';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -536,7 +598,11 @@ const ORTHO={
     attribution:'IGN / SNIT - Ortofoto 2014-2017'},
   wb2021:{name:'Imagen aérea 2021 (Esri)',short:'Imagen aérea 2021 (Esri)',type:'xyz',dateLabel:'2021-11-30',
     rel:'48624',rel_fallback:'48624',discover:'2021',badRels:['26120'],
-    attribution:'Esri World Imagery (Wayback 2021-11-30)'},
+    attribution:'Esri World Imagery (Wayback 2021-11-30)',
+    fallback:{name:'Imagen aérea 2021 (EOX Sentinel-2 Cloudless)',short:'Sentinel-2 2021 (EOX)',dateLabel:'2021',
+      url:'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2021_3857/default/g/{z}/{y}/{x}.jpg',
+      maxNativeZoom:13,maxZoom:22,badge:'EOX',
+      attribution:'EOX Sentinel-2 Cloudless 2021 (CC BY-NC-SA 4.0; contains modified Copernicus Sentinel data 2021)'}},
   wb2023:{name:'Imagen aérea 2023 (Esri)',short:'Imagen aérea 2023 (Esri)',type:'xyz',dateLabel:'2023-12-07',
     rel:'56102',rel_fallback:'56102',discover:'2023',
     attribution:'Esri World Imagery (Wayback 2023-12-07)'}
@@ -571,6 +637,7 @@ function proxiedTile(url,options){ return new ProxiedTileLayer(url,options); }
 function buildOrthoLayer(key,opts){
   const c=ORTHO[key];
   opts=opts||{};
+  const src=(c._usingFallback&&c.fallback)?c.fallback:c;
   const op=(opts.opacity!=null)?opts.opacity:orthoOpacity;
   let lyr;
   if(c.type==='wms'){
@@ -578,22 +645,73 @@ function buildOrthoLayer(key,opts){
       layers:c.layers, format:'image/png', transparent:true,
       version:c.version||'1.1.1', opacity:op,
       crossOrigin:opts.crossOrigin||'anonymous', maxZoom:opts.maxZoom||21,
-      attribution:c.attribution
+      attribution:src.attribution||c.attribution
     }, c.extraParams||{});
     // Por defecto se usa el proxy (CORS + caché). opts.direct=true lo evita.
     lyr=opts.direct ? L.tileLayer.wms(c.url, params) : proxiedWms(c.url, params);
   } else if(c.type==='wmts'){
     const tileOpts={opacity:op, crossOrigin:opts.crossOrigin||'anonymous',
-      maxNativeZoom:20, maxZoom:opts.maxZoom||21, attribution:c.attribution};
+      maxNativeZoom:20, maxZoom:opts.maxZoom||21, attribution:src.attribution||c.attribution};
     // El WMTS de TERRA 1997 no publica CORS; por defecto pasa por el proxy OGC.
     lyr=opts.direct ? L.tileLayer(c.url,tileOpts) : proxiedTile(c.url,tileOpts);
   } else { // xyz (Esri Wayback) — over-zoom para acercamiento fino aunque la fuente nativa llegue a z19
-    const url=(c.urlTemplate||WB_BASE.replace('{rel}', c.rel))
+    const template=src.url||src.urlTemplate||c.urlTemplate||WB_BASE.replace('{rel}', c.rel);
+    const url=template
       .replace('{level}','{z}').replace('{row}','{y}').replace('{col}','{x}');
     lyr=L.tileLayer(url,{opacity:op, crossOrigin:opts.crossOrigin||null,
-      maxNativeZoom:19, maxZoom:opts.maxZoom||22, attribution:c.attribution});
+      maxNativeZoom:src.maxNativeZoom||c.maxNativeZoom||19,
+      maxZoom:opts.maxZoom||src.maxZoom||c.maxZoom||22, attribution:src.attribution||c.attribution});
   }
   return lyr;
+}
+
+function orthoActiveSource(key){
+  const c=ORTHO[key];
+  if(!c)return null;
+  return (c._usingFallback&&c.fallback)?c.fallback:c;
+}
+
+function orthoDisplayName(key){
+  const c=ORTHO[key],src=orthoActiveSource(key);
+  if(!c||!src)return key;
+  return src.name||c.name||key;
+}
+
+function bindOrthoLayerEvents(key,st){
+  if(!orthoLayers[key])return;
+  let errCount=0;
+  orthoLayers[key].on('tileerror',()=>{
+    errCount++;
+    if(errCount>=2&&activateOrthoFallback(key,st))return;
+    if(st&&errCount>=2){st.dataset.err='1';st.textContent='⚠';st.title='No se pudieron cargar teselas: verifique nombre de capa, cobertura o acerque el zoom.';}
+  });
+  orthoLayers[key].on('load',()=>{
+    if(st&&st.dataset.err){st.dataset.err='';st.textContent=st.dataset.orig||st.textContent;}
+  });
+}
+
+function activateOrthoFallback(key,st){
+  const c=ORTHO[key];
+  if(!c||!c.fallback||c._usingFallback)return false;
+  c._usingFallback=true;
+  if(st){
+    st.dataset.err='';
+    st.textContent=c.fallback.badge||'alt';
+    st.title='Respaldo activo: '+(c.fallback.name||'imagen alternativa');
+  }
+  if(orthoLayers[key]){
+    try{map.removeLayer(orthoLayers[key]);}catch(e){}
+    delete orthoLayers[key];
+  }
+  const cb=document.getElementById('ob-'+key);
+  if(cb&&cb.checked){
+    orthoLayers[key]=buildOrthoLayer(key);
+    orthoLayers[key].addTo(map);
+    bindOrthoLayerEvents(key,st);
+    restackLayers();
+  }
+  toast('Imagen 2021: se activó respaldo EOX Sentinel-2 Cloudless',false,5500);
+  return true;
 }
 
 /* Mantiene el orden correcto: ortofoto debajo de las capas de cobertura */
@@ -619,16 +737,11 @@ function setOrtho(key,on){
       orthoLayers[key]=buildOrthoLayer(key);
       orthoLayers[key].addTo(map);
       const st=document.getElementById('st-'+key);
-      let errCount=0;
-      orthoLayers[key].on('tileerror',()=>{
-        errCount++;
-        if(st&&errCount>=2){st.dataset.err='1';st.textContent='⚠';st.title='No se pudieron cargar teselas: verifique nombre de capa, cobertura o acerque el zoom.';}
-      });
-      orthoLayers[key].on('load',()=>{ if(st&&st.dataset.err){st.dataset.err='';st.textContent=st.dataset.orig||st.textContent;} });
+      bindOrthoLayerEvents(key,st);
     }
     activeOrtho=key;
     restackLayers();
-    toast('🛰️ '+ORTHO[key].name);
+    toast('🛰️ '+orthoDisplayName(key));
   } else {
     if(orthoLayers[key]){map.removeLayer(orthoLayers[key]);delete orthoLayers[key];}
     if(activeOrtho===key)activeOrtho=null;
@@ -1967,7 +2080,7 @@ function displayResults(results,userGeoJSON,userUnion){
 
   const note=document.createElement('div');
   note.style.cssText='font-size:8.5px;color:#5a8a5c;margin-top:6px;border-top:1px solid #163318;padding-top:5px;line-height:1.4';
-  note.innerHTML='<b>Nota metodológica:</b> Solo se muestran clases con superficie &gt; 0.01 ha. Vacíos CF 2021/2023 = área sin bosque dentro del predio. Geometrías a resolución completa (sin simplificar; redondeo de coordenadas 0.11 m). Áreas calculadas en proyección CRTM05/EPSG:5367, coincidentes con QGIS. Cada mini-mapa muestra la cobertura sobre su ortofoto del período correspondiente (SNIT-IGN / Esri).';
+  note.innerHTML='<b>Nota metodológica:</b> Solo se muestran clases con superficie &gt; 0.01 ha. Vacíos CF 2021/2023 = área sin bosque dentro del predio. Geometrías a resolución completa (sin simplificar; redondeo de coordenadas 0.11 m). Áreas calculadas en proyección CRTM05/EPSG:5367, coincidentes con QGIS. Cada mini-mapa muestra la cobertura sobre su ortofoto del período correspondiente (SNIT-IGN / Esri / EOX).';
   rb.appendChild(note);
 
   document.getElementById('rp').style.display='block';
@@ -2097,8 +2210,8 @@ function legendItemsForReportMap(cfg,bounds){
 }
 
 function orthoDateLabel(key){
-  const o=key&&ORTHO[key];
-  return o&&(o.dateLabel||o.discover||null);
+  const o=key&&ORTHO[key],src=orthoActiveSource(key);
+  return o&&((src&&src.dateLabel)||o.dateLabel||o.discover||null);
 }
 
 function currentAerialDateLabel(){
@@ -2111,7 +2224,10 @@ function reportMapTitle(cfg){
     return 'Imagen ESRI ('+(d||'fecha no disponible')+') / Dibujo del plano';
   }
   const d=orthoDateLabel(cfg.backgroundKey);
-  if(cfg.backgroundKey==='wb2021')return 'Imagen ESRI 2021 ('+(d||'fecha no disponible')+') / COBERTURA FORESTAL 2021';
+  if(cfg.backgroundKey==='wb2021'){
+    const eox=ORTHO.wb2021&&ORTHO.wb2021._usingFallback;
+    return (eox?'Imagen EOX Sentinel-2 2021':'Imagen ESRI 2021')+' ('+(d||'fecha no disponible')+') / COBERTURA FORESTAL 2021';
+  }
   if(cfg.backgroundKey==='wb2023')return 'Imagen ESRI 2023 ('+(d||'fecha no disponible')+') / COBERTURA FORESTAL 2023';
   return cfg.title;
 }
@@ -2126,7 +2242,7 @@ function reportMapSource(cfg){
     return (S.lastAerialDate||'Fuente: Esri World Imagery · imagen más actual disponible')+' · Dibujo del plano: '+(S.pdfName||'PDF cargado');
   }
   if(cfg.currentImagery)return S.lastAerialDate||'Fuente: Esri World Imagery';
-  const bg=cfg.backgroundKey&&ORTHO[cfg.backgroundKey]?ORTHO[cfg.backgroundKey].name:null;
+  const bg=cfg.backgroundKey&&ORTHO[cfg.backgroundKey]?orthoDisplayName(cfg.backgroundKey):null;
   const d=orthoDateLabel(cfg.backgroundKey);
   const cov=cfg.coverageKey&&LM[cfg.coverageKey]?LM[cfg.coverageKey].label:null;
   return 'Fondo: '+(bg||'Imagen aérea')+(d?' · Fecha: '+d:'')+(cov?' · Cobertura: '+cov:'');
@@ -2196,8 +2312,8 @@ async function captureMapImage(cfg,userGeoJSON,bounds,w,h){
   tmp.style.cssText='position:absolute;left:-10000px;top:0;width:'+w+'px;height:'+h+'px;background:#16281a;';
   document.body.appendChild(tmp);
   const m=L.map(tmp,{zoomControl:false,attributionControl:false,fadeAnimation:false,zoomAnimation:false,markerZoomAnimation:false,inertia:false});
-  const imagery=_addReportBaseLayer(m,cfg);
-  await new Promise(res=>{
+  let imagery=_addReportBaseLayer(m,cfg);
+  const waitImagery=()=>new Promise(res=>{
     let done=false;const finish=()=>{if(!done){done=true;res();}};
     imagery.on('load',()=>setTimeout(finish,300));
     imagery.addTo(m);
@@ -2205,7 +2321,16 @@ async function captureMapImage(cfg,userGeoJSON,bounds,w,h){
     m.invalidateSize();
     setTimeout(finish,6000); // respaldo si 'load' no dispara
   });
+  await waitImagery();
   await new Promise(r=>setTimeout(r,250));
+  const drawableTiles=()=>Array.from(tmp.querySelectorAll('img.leaflet-tile')).filter(img=>img.complete&&img.naturalWidth>0).length;
+  if(cfg.backgroundKey==='wb2021'&&drawableTiles()===0&&ORTHO.wb2021&&ORTHO.wb2021.fallback&&!ORTHO.wb2021._usingFallback){
+    try{m.removeLayer(imagery);}catch(e){}
+    ORTHO.wb2021._usingFallback=true;
+    imagery=_addReportBaseLayer(m,cfg);
+    await waitImagery();
+    await new Promise(r=>setTimeout(r,250));
+  }
 
   const canvas=document.createElement('canvas');
   canvas.width=w;canvas.height=h;
@@ -2322,9 +2447,9 @@ function _buildDocBody(reportMaps){
       const vl=hasVoids?'Sin cobertura forestal':'Área sin clasificar';
       h+='<tr>';
       if(first){h+='<td rowspan="'+span+'" style="border:1px solid #999;padding:5px;font-weight:bold;background:#eef5ee;text-align:center;vertical-align:middle">'+LM[k].label+'</td>';first=false;}
-      h+='<td style="border:1px solid #999;padding:4px;color:#c0392b;font-style:italic">'+vl+'</td>'+
-         '<td style="border:1px solid #999;padding:4px;text-align:right;color:#c0392b">'+vHa.toFixed(2)+'</td>'+
-         '<td style="border:1px solid #999;padding:4px;text-align:right;color:#c0392b">'+pct+'%</td></tr>';
+      h+='<td style="border:1px solid #999;padding:4px;color:#111">'+vl+'</td>'+
+         '<td style="border:1px solid #999;padding:4px;text-align:right;color:#111">'+vHa.toFixed(2)+'</td>'+
+         '<td style="border:1px solid #999;padding:4px;text-align:right;color:#111">'+pct+'%</td></tr>';
     }
     h+='<tr style="background:#dce9dc;font-weight:bold">'+
        '<td style="border:1px solid #999;padding:4px;text-align:right">TOTAL</td>'+
@@ -2339,7 +2464,7 @@ function _buildDocBody(reportMaps){
      'En las capas Cobertura Forestal 2021/2023, los "vacíos" corresponden a áreas sin bosque dentro del predio. '+
      'Las geometrías se procesan a resolución completa (sin simplificación; redondeo de coordenadas a 0.11 m) y las áreas se calculan en proyección CRTM05/EPSG:5367, de modo que coinciden con QGIS sobre los datos originales; '+
      'para fines registrales o de alta precisión deben emplearse las capas originales en CRTM05/EPSG:5367 mediante QGIS. '+
-     'Las imágenes aéreas de los mapas provienen de SNIT-IGN y Esri World Imagery/Wayback según el año indicado; la fecha de la imagen actual corresponde a la tesela consultada en el centro del predio. '+
+     'Las imágenes aéreas de los mapas provienen de SNIT-IGN, Esri World Imagery/Wayback y, para 2021 si Esri falla, EOX Sentinel-2 Cloudless; la fecha de la imagen actual corresponde a la tesela consultada en el centro del predio. '+
      'Documento generado por el Visor de Cobertura Forestal — PNLQ (SINAC-ACC).</p>';
   return h;
 }
@@ -2465,11 +2590,14 @@ print(f"✅ Generado: {sz/1024/1024:.2f} MB")
 
 checks = {
     "Placeholders resueltos": all(p not in HTML for p in ["{{CF2021}}","{{CF2023}}","{{FN2000}}","{{FN2005}}"]),
-    "Tabs": HTML.count('class="tab') >= 3,
+    "Tabs": HTML.count('class="tab') >= 6,
     "switchTab fn": "function switchTab" in HTML,
+    "panel-carga": 'id="panel-carga"' in HTML,
+    "panel-asp": 'id="panel-asp"' in HTML,
+    "panel-fincas-pne": 'id="panel-fincas-pne"' in HTML,
     "panel-cobertura": 'id="panel-cobertura"' in HTML,
-    "panel-suelos": 'id="panel-suelos"' in HTML,
-    "panel-antecedentes": 'id="panel-antecedentes"' in HTML,
+    "panel-terrenos": 'id="panel-terrenos"' in HTML,
+    "panel-fuentes": 'id="panel-fuentes"' in HTML,
     "Subtítulo SINAC–ACC–Tapantí": "Bloque Tapantí Macizo de la Muerte" in HTML,
     "Nombre CF2021 correcto": "Cobertura Forestal 2021</span>" in HTML,
     "Nombre CF2023 correcto": "Cobertura Forestal 2023</span>" in HTML,
@@ -2483,8 +2611,10 @@ checks = {
     "Tabla rtbl": "rtbl" in HTML,
     "Barras proporcionales": "bar-fill" in HTML,
     "Filtro >0.01ha": "h>0.01" in HTML,
-    "Placeholder suelos": "Suelos Forestales" in HTML,
-    "Placeholder antecedentes": "Antecedentes y PNE" in HTML,
+    "Placeholder terrenos": "Terrenos forestales" in HTML,
+    "Placeholder fincas PNE": "Fincas estatales y PNE" in HTML,
+    "Placeholder ASP": "Áreas Silvestres Protegidas" in HTML,
+    "Placeholder fuentes": "Fuentes de agua y AP" in HTML,
     "Decreto 41960 ref": "41960" in HTML,
     "Ley Forestal ref": "7575" in HTML,
     "Capa Tipos de Bosque 2012 (checkbox)": 'id="cb-tb2012"' in HTML,
@@ -2510,6 +2640,7 @@ checks = {
     "Word una columna centrada": 'width="620"' in HTML and "Mapas combinados imagen aérea / cobertura" in HTML and "page-break-inside:avoid" in HTML,
     "Word simbología interna y norte": "function _drawLegend" in HTML and "function _drawNorthArrow" in HTML and "const title='Simbología'" in HTML,
     "Word imagen plano PDF": "pdfPlanData" in HTML and "Dibujo del plano: " in HTML,
+    "Texto negro en vacíos": "td-void{color:#111" in HTML and "Sin cobertura forestal" in HTML,
     "Composita teselas (drawImage)": "ctx.drawImage(img" in HTML,
     "Dibuja cobertura en canvas": "function _drawCobertura" in HTML,
     "Dibuja predio en canvas": "function _drawUser" in HTML,
@@ -2533,6 +2664,7 @@ checks = {
     "Toggle Imagen del plano": 'id="cb-pdf-plan"' in HTML and "Imagen del plano" in HTML and "function togglePdfPlan" in HTML,
     "Coordenadas CRTM05 en barra": "CR05/CRTM05 E:" in HTML and "EPSG:5367" in HTML,
     "Esri Wayback": "wayback.maptiles.arcgis.com" in HTML,
+    "EOX 2021 fallback": "s2cloudless-2021_3857" in HTML and "activateOrthoFallback" in HTML,
     "Emparejamiento PAIR": "const PAIR=" in HTML,
     "Descubrimiento runtime": "function discoverImageryConfig" in HTML,
     "Area CRTM05 (5367)": "function geomAreaCRTM05" in HTML and "ringAreaCRTM05" in HTML,
