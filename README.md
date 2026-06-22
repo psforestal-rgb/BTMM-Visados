@@ -50,8 +50,9 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 - Intersección espacial y cuadro de superficies (ha y % del predio), solo clases > 0.01 ha.
 - Mini-mapas por capa, cada uno sobre su ortofoto del período correspondiente.
 - Carga de plano PDF como capa referencial: detecta visualmente el contorno del
-  predio en la primera página, recorta el dibujo y lo ajusta al polígono cargado,
-  sin alterar la geometría oficial ni los cálculos de cobertura.
+  predio en la primera página, recorta el dibujo, elimina el fondo blanco y lo
+  muestra como trazos negros sobre todas las capas, sin alterar la geometría
+  oficial ni los cálculos de cobertura.
 - Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
 - Exportación a documento **Word** (.doc) con mapas y tablas.

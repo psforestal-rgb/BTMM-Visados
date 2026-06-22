@@ -14,8 +14,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-21-pdf-autoalign-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-21-pdf-autoalign-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-22-pdf-lineart-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-pdf-lineart-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -265,7 +265,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
         <button class="btn bp" id="btn-pdf-load" type="button" style="margin-top:0" onclick="document.getElementById('pdf-fi').click()">📄 Cargar PDF</button>
         <input type="file" id="pdf-fi" accept=".pdf" style="display:none">
         <label class="ltog" id="pdf-toggle-row" style="display:none;margin-top:5px">
-          <input type="checkbox" id="cb-pdf-plan" checked><span style="flex:1">Mostrar plano PDF</span><span class="lbadge">ref</span>
+          <input type="checkbox" id="cb-pdf-plan" checked><span style="flex:1">Imagen del plano</span><span class="lbadge">ref</span>
         </label>
         <button class="btn bd" id="btn-pdf-clear" style="display:none" onclick="clearPdfPlanLayer()">✖ Limpiar PDF</button>
         <div id="pdf-info" style="display:none;font-size:8px;color:#9bc99a;line-height:1.35;margin-top:4px"></div>
@@ -363,7 +363,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-21-pdf-autoalign-v1';
+const APP_VERSION='2026-06-22-pdf-lineart-v1';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -412,7 +412,7 @@ const LD={
 
 const S={lfl:{},gjd:{},uGJ:null,uLfl:null,op:0.75,
   lastResults:null,lastUserGeoJSON:null,lastBounds:null,lastUserHa:0,lastUserN:0,lastAerialDate:null,
-  pdfLayer:null,pdfName:null,pdfOpacity:0.72};
+  pdfLayer:null,pdfName:null,pdfOpacity:1};
 const miniMaps={};
 // Encuadre ajustado al predio para todos los mini-mapas (zoom al predio)
 const MM_FIT={padding:[12,12],maxZoom:17};
@@ -428,6 +428,7 @@ function createRefPane(name,zIndex){
 }
 createRefPane('refLinePane',610);
 createRefPane('refLabelPane',660);
+createRefPane('pdfPlanPane',720);
 
 /* ── CAPA DE REFERENCIAS (superposición transparente) ──
    Los servicios de Esri son tiles ya renderizados. Para evitar franjas y
@@ -562,10 +563,10 @@ function restackLayers(){
   Object.values(orthoLayers).forEach(l=>{if(l&&l.bringToBack)l.bringToBack();});
   // luego las capas de cobertura por encima
   Object.keys(LM).forEach(k=>{if(S.lfl[k]&&map.hasLayer(S.lfl[k])&&S.lfl[k].bringToFront)S.lfl[k].bringToFront();});
-  // el plano PDF queda como referencia sobre la cobertura, sin alterar el predio
-  if(S.pdfLayer&&map.hasLayer(S.pdfLayer)&&S.pdfLayer.bringToFront)S.pdfLayer.bringToFront();
   // el polígono del usuario siempre arriba
   if(S.uLfl&&S.uLfl.bringToFront)S.uLfl.bringToFront();
+  // el plano PDF es line art transparente y se dibuja encima de todo
+  if(S.pdfLayer&&map.hasLayer(S.pdfLayer)&&S.pdfLayer.bringToFront)S.pdfLayer.bringToFront();
 }
 
 function setOrtho(key,on){
@@ -905,13 +906,16 @@ function clearUserLayer(){
   closeResults();
 }
 
-function makeWhiteTransparent(canvas,threshold=246){
+function makePdfLineArtTransparent(canvas,threshold=238){
   const ctx=canvas.getContext('2d',{willReadFrequently:true});
   const img=ctx.getImageData(0,0,canvas.width,canvas.height);
   const d=img.data;
   for(let i=0;i<d.length;i+=4){
-    if(d[i]>=threshold&&d[i+1]>=threshold&&d[i+2]>=threshold)d[i+3]=0;
-    else if(d[i]>225&&d[i+1]>225&&d[i+2]>225)d[i+3]=Math.min(d[i+3],95);
+    if(d[i+3]<20){d[i+3]=0;continue;}
+    const lum=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    if(lum>=threshold){d[i+3]=0;continue;}
+    const a=lum<205?255:Math.round(Math.max(70,Math.min(220,(threshold-lum)*5.5)));
+    d[i]=0;d[i+1]=0;d[i+2]=0;d[i+3]=Math.min(d[i+3],a);
   }
   ctx.putImageData(img,0,0);
 }
@@ -1024,7 +1028,7 @@ function cropPdfToDetectedPredio(canvas,detected){
   const out=document.createElement('canvas');
   out.width=b.w;out.height=b.h;
   out.getContext('2d',{willReadFrequently:true}).drawImage(canvas,b.x,b.y,b.w,b.h,0,0,b.w,b.h);
-  makeWhiteTransparent(out);
+  makePdfLineArtTransparent(out);
   return out;
 }
 
@@ -1062,14 +1066,14 @@ async function handlePdfPlanUpload(file){
     const crop=cropPdfToDetectedPredio(rendered.canvas,detected);
     setProg(82,'Georreferenciando recorte del plano…');
     clearPdfPlanLayer();
-    S.pdfLayer=L.imageOverlay(crop.toDataURL('image/png'),bounds,{opacity:S.pdfOpacity,interactive:false}).addTo(map);
+    S.pdfLayer=L.imageOverlay(crop.toDataURL('image/png'),bounds,{pane:'pdfPlanPane',opacity:S.pdfOpacity,interactive:false}).addTo(map);
     S.pdfName=file.name;
     document.getElementById('pdf-toggle-row').style.display='flex';
     document.getElementById('btn-pdf-clear').style.display='block';
     document.getElementById('cb-pdf-plan').checked=true;
     const info=document.getElementById('pdf-info');
     info.style.display='block';
-    info.textContent=`${file.name} · página 1/${rendered.pages} · contorno detectado · capa referencial`;
+    info.textContent=`${file.name} · página 1/${rendered.pages} · contorno detectado · fondo transparente`;
     map.fitBounds(bounds,{padding:[25,25]});
     restackLayers();
     setProg(100,'Plano PDF cargado');
@@ -1758,7 +1762,8 @@ checks = {
     "Favicon": "favicon.ico" in HTML,
     "Plano PDF referencial": 'id="pdf-fi"' in HTML and "function handlePdfPlanUpload" in HTML and "pdfjsLib" in HTML,
     "Detector contorno PDF": "function detectPdfPredioBox" in HTML and "cropPdfToDetectedPredio" in HTML and "contorno detectado" in HTML,
-    "Toggle Plano PDF": 'id="cb-pdf-plan"' in HTML and "function togglePdfPlan" in HTML,
+    "Line art PDF transparente": "function makePdfLineArtTransparent" in HTML and "pdfPlanPane" in HTML and "fondo transparente" in HTML,
+    "Toggle Imagen del plano": 'id="cb-pdf-plan"' in HTML and "Imagen del plano" in HTML and "function togglePdfPlan" in HTML,
     "Coordenadas CRTM05 en barra": "CR05/CRTM05 E:" in HTML and "EPSG:5367" in HTML,
     "Esri Wayback": "wayback.maptiles.arcgis.com" in HTML,
     "Emparejamiento PAIR": "const PAIR=" in HTML,
