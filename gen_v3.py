@@ -32,8 +32,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-22-pdf-plan-qc-v1">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-pdf-plan-qc-v1">
+<link rel="icon" href="favicon.ico?v=2026-06-22-word-export-fix-v1">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-word-export-fix-v1">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -381,7 +381,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-22-pdf-plan-qc-v1';
+const APP_VERSION='2026-06-22-word-export-fix-v1';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -1816,6 +1816,7 @@ function _fechaLarga(){
 /* Construye el cuerpo HTML del documento Word */
 function _buildDocBody(reportMaps){
   const R=S.lastResults,uHa=S.lastUserHa,uN=S.lastUserN;
+  const resultKeys=Object.keys(LM);
   const azul='#1a5e1c';
   let h='';
   // Encabezado institucional
@@ -1854,7 +1855,7 @@ function _buildDocBody(reportMaps){
      '<th style="border:1px solid #999;padding:5px">Clasificación</th>'+
      '<th style="border:1px solid #999;padding:5px">Superficie (ha)</th>'+
      '<th style="border:1px solid #999;padding:5px">Porcentaje (%)</th></tr>';
-  keys.forEach(k=>{
+  resultKeys.forEach(k=>{
     const res=R[k];if(!res||res.error)return;
     const ca=res.ca,vHa=res.void,hasVoids=res.hasVoids;
     const nz=Object.entries(ca).filter(([,x])=>x>0.01).sort((a,b)=>b[1]-a[1]);
