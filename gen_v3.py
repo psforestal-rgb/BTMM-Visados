@@ -32,8 +32,8 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Visor Cobertura Forestal – PNLQ / ACC-SINAC</title>
-<link rel="icon" href="favicon.ico?v=2026-06-22-map-sequence-normalized-v5">
-<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-map-sequence-normalized-v5">
+<link rel="icon" href="favicon.ico?v=2026-06-22-word-clean-wayback2021-v6">
+<link rel="shortcut icon" href="favicon.ico?v=2026-06-22-word-clean-wayback2021-v6">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -401,7 +401,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const APP_VERSION='2026-06-22-map-sequence-normalized-v5';
+const APP_VERSION='2026-06-22-word-clean-wayback2021-v6';
 window.BTMM_APP_VERSION=APP_VERSION;
 (function enforceFreshVersion(){
   if(location.protocol==='file:') return;
@@ -534,9 +534,9 @@ const ORTHO={
     capsUrl:'https://geos1.snitcr.go.cr/Ortofoto2017/wms?service=WMS&version=1.1.1&request=GetCapabilities',
     discoverLayer:false,
     attribution:'IGN / SNIT - Ortofoto 2014-2017'},
-  wb2021:{name:'Imagen aérea 2021 (Esri)',short:'Imagen aérea 2021 (Esri)',type:'xyz',dateLabel:'2021',
-    rel:'13851',rel_fallback:'13851',discover:'2021',
-    attribution:'Esri World Imagery (Wayback 2021)'},
+  wb2021:{name:'Imagen aérea 2021 (Esri)',short:'Imagen aérea 2021 (Esri)',type:'xyz',dateLabel:'2021-11-30',
+    rel:'48624',rel_fallback:'48624',discover:'2021',badRels:['26120'],
+    attribution:'Esri World Imagery (Wayback 2021-11-30)'},
   wb2023:{name:'Imagen aérea 2023 (Esri)',short:'Imagen aérea 2023 (Esri)',type:'xyz',dateLabel:'2023-12-07',
     rel:'56102',rel_fallback:'56102',discover:'2023',
     attribution:'Esri World Imagery (Wayback 2023-12-07)'}
@@ -684,13 +684,14 @@ async function discoverImageryConfig(){
         const urlTemplate=v.itemURL||v.tileURL||'';
         return{rel,label,d,urlTemplate};
       });
-      const pick=(year)=>{
-        const cand=items.filter(it=>String(it.label).includes(String(year))&&it.rel);
+      const pick=(year,badRels)=>{
+        const bad=new Set((badRels||[]).map(String));
+        const cand=items.filter(it=>String(it.label).includes(String(year))&&it.rel&&!bad.has(String(it.rel)));
         if(!cand.length)return null;
         cand.sort((a,b)=>b.d-a.d);
         return cand[0];
       };
-      const p21=pick(2021), p23=pick(2023);
+      const p21=pick(2021,ORTHO.wb2021.badRels), p23=pick(2023,ORTHO.wb2023.badRels);
       if(p21){ORTHO.wb2021.rel=p21.rel;ORTHO.wb2021.urlTemplate=p21.urlTemplate;ORTHO.wb2021.attribution='Esri World Imagery (Wayback '+p21.label+')';ORTHO.wb2021.dateLabel=p21.label;}
       if(p23){ORTHO.wb2023.rel=p23.rel;ORTHO.wb2023.urlTemplate=p23.urlTemplate;ORTHO.wb2023.attribution='Esri World Imagery (Wayback '+p23.label+')';ORTHO.wb2023.dateLabel=p23.label;}
     }
@@ -2260,19 +2261,6 @@ function _fechaLarga(){
     String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
 }
 
-function _legendHtml(items){
-  if(!items||!items.length)return '<p style="font-size:8pt;color:#777;margin:3px 0 0">Simbología: sin clases de cobertura visibles en esta vista.</p>';
-  let h='<table style="margin:4px auto 0;border-collapse:collapse;font-size:8pt">';
-  h+='<tr><td colspan="2" style="border:1px solid #bbb;background:#eef5ee;font-weight:bold;padding:3px 6px;text-align:center">Simbología del mapa</td></tr>';
-  items.forEach(it=>{
-    h+='<tr><td style="border:1px solid #bbb;padding:3px 5px;width:18px;text-align:center">'+
-      '<span style="display:inline-block;width:11px;height:11px;background:'+it.color+';border:1px solid #555"></span></td>'+
-      '<td style="border:1px solid #bbb;padding:3px 6px;text-align:left">'+it.label+'</td></tr>';
-  });
-  h+='</table>';
-  return h;
-}
-
 /* Construye el cuerpo HTML del documento Word */
 function _buildDocBody(reportMaps){
   const R=S.lastResults,uHa=S.lastUserHa,uN=S.lastUserN;
@@ -2289,7 +2277,6 @@ function _buildDocBody(reportMaps){
   h+='<tr><td style="border:1px solid #999;padding:5px;background:#eef5ee;font-weight:bold;width:40%">Superficie total del predio analizado</td><td style="border:1px solid #999;padding:5px">'+uHa.toFixed(2)+' ha</td></tr>';
   h+='<tr><td style="border:1px solid #999;padding:5px;background:#eef5ee;font-weight:bold">Número de polígonos</td><td style="border:1px solid #999;padding:5px">'+uN+'</td></tr>';
   h+='<tr><td style="border:1px solid #999;padding:5px;background:#eef5ee;font-weight:bold">Fecha de generación</td><td style="border:1px solid #999;padding:5px">'+_fechaLarga()+'</td></tr>';
-  h+='<tr><td style="border:1px solid #999;padding:5px;background:#eef5ee;font-weight:bold">Sistema de referencia</td><td style="border:1px solid #999;padding:5px">Análisis en WGS84 (EPSG:4326). Datos originales CRTM05 / EPSG:5367.</td></tr>';
   h+='</table>';
 
   // Sección de mapas
@@ -2301,7 +2288,6 @@ function _buildDocBody(reportMaps){
     h+='<p style="font-size:11pt;font-weight:bold;color:'+azul+';margin:0 0 5px">MAPA '+(i+1)+'. '+(entry.title||reportMapTitle(cfg))+'</p>';
     if(img)h+='<img src="'+img+'" width="620" style="border:1px solid #999"/>';
     else h+='<p style="font-size:8pt;color:#a00">[No fue posible capturar este mapa]</p>';
-    h+=_legendHtml(entry.legendItems);
     h+='<p style="font-size:8.5pt;color:#444;margin:4px 0 0;line-height:1.35">'+entry.source+'</p>';
     if(cfg.pdfPlan&&!S.pdfPlanData)h+='<p style="font-size:8pt;color:#a00;margin:2px 0 0">No se incluyó imagen del plano porque no había PDF cargado al exportar.</p>';
     h+='</div>';
@@ -2522,7 +2508,7 @@ checks = {
     "Secuencia mapas exacta": HTML.find("TERRA 1997 / FONAFIFO 2000") < HTML.find("Ortofoto 2005-2007 / FONAFIFO 2005") < HTML.find("Ortofoto 2014-2017 / TIPOS DE BOSQUE 2012") < HTML.find("Imagen ESRI 2021 / COBERTURA FORESTAL 2021") < HTML.find("Imagen ESRI 2023 / COBERTURA FORESTAL 2023"),
     "Normalizacion visual mapas": "normalizeImageryCanvas" in HTML and ".mm-div .leaflet-tile{filter:" in HTML,
     "Word una columna centrada": 'width="620"' in HTML and "Mapas combinados imagen aérea / cobertura" in HTML and "page-break-inside:avoid" in HTML,
-    "Word simbología y norte": "function _drawLegend" in HTML and "function _drawNorthArrow" in HTML and "Simbología del mapa" in HTML,
+    "Word simbología interna y norte": "function _drawLegend" in HTML and "function _drawNorthArrow" in HTML and "const title='Simbología'" in HTML,
     "Word imagen plano PDF": "pdfPlanData" in HTML and "Dibujo del plano: " in HTML,
     "Composita teselas (drawImage)": "ctx.drawImage(img" in HTML,
     "Dibuja cobertura en canvas": "function _drawCobertura" in HTML,
