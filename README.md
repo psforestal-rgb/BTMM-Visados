@@ -71,11 +71,14 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 - Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
 - Exportación a documento **Word** (.docx) sobre el **membrete institucional
-  oficial SINAC-ACC** (encabezado y pie en todas las páginas), con mapas
-  combinados imagen/cobertura en una sola columna, centrados, con simbología por
-  vista y flecha norte. El cuerpo del informe se incrusta en la plantilla oficial
-  (`membrete_sinac.dotx`) mediante `altChunk`; para ver el contenido incrustado se
-  recomienda abrir el archivo con Microsoft Word.
+  oficial SINAC-ACC** (encabezado y pie en todas las páginas). El informe reúne
+  los resultados de **todos los análisis realizados** (Cobertura Forestal, Áreas
+  Silvestres Protegidas y Fincas/PNE), con sus mapas y tablas en una sola columna,
+  centrados, con simbología por vista y flecha norte. El cuerpo del informe se
+  incrusta en la plantilla oficial (`membrete_sinac.dotx`) mediante `altChunk`;
+  para ver el contenido incrustado se recomienda abrir el archivo con Microsoft Word.
+- La ventana de resultados permanece abierta al cambiar de pestaña (se cierra con
+  el botón ✕ o al limpiar el predio).
 
 ## Estructura del repositorio
 
