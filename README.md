@@ -59,6 +59,8 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   de estimación de traslape (área en ha y % del predio; con número de finca e
   información del plano para PNE del SNIT y Fincas del Estado ACC).
 - Botón de zoom al polígono cargado, disponible en todas las pestañas con visor.
+- Capa opcional de **imagen aérea reciente** (Esri World Imagery, con sobreampliación)
+  como fondo del visor, activable desde la tarjeta de Referencias en todas las pestañas.
 - Carga de plano PDF como capa referencial: detecta visualmente el contorno del
   predio en la primera página, recorta el dibujo, elimina el fondo blanco y lo
   muestra como dibujo transparente sobre todas las capas, sin alterar la geometría
