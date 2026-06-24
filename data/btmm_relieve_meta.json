@@ -10,7 +10,7 @@
     ]
   ],
   "crs": "EPSG:5367",
-  "resolution_m": 20.0,
+  "resolution_m": 10.0,
   "source": "Relieve (Derivado CARTO 25k 10m).gpkg",
   "classes": [
     {
