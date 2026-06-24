@@ -53,6 +53,10 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 - Mini-mapas por capa, cada uno sobre su ortofoto del período correspondiente.
 - Módulo **Áreas Silvestres Protegidas**: capa ASP local con simbología por área y
   análisis de traslape (mini-mapas sin imagen aérea y cuadro de área por ASP).
+- Módulo **Fuentes de agua y AP**: capa local de **cauces y drenaje** (líneas) que
+  muestra el nombre del cauce al pasar el cursor (sin geoproceso), y capas del **WMS
+  de la Dirección de Agua** (`mapas.da.go.cr`) descubiertas automáticamente vía el
+  proxy OGC, con toggles por capa y control de opacidad.
 - Módulo **Fincas estatales y PNE**: carga de cuatro capas locales (Buffer 2 km
   Carretera Interamericana, PNE del SNIT, Terrenos sobre 3000 m y Fincas del Estado
   ACC) y análisis "Info PNE" que genera un mini-mapa del predio por capa y la tabla
