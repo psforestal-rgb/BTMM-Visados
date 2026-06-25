@@ -53,6 +53,11 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 - Mini-mapas por capa, cada uno sobre su ortofoto del período correspondiente.
 - Módulo **Áreas Silvestres Protegidas**: capa ASP local con simbología por área y
   análisis de traslape (mini-mapas sin imagen aérea y cuadro de área por ASP).
+- Módulo **Terrenos forestales**: relieve (7 clases de pendiente) e inundación. El
+  cálculo de relieve usa **estadística zonal ráster**: una grilla de clases de 1 byte
+  a 5 m en CRTM05/EPSG:5367 (`data/btmm_relieve_clases_5m.bin.gz`, ~3.9 MB, descarga
+  única) que se muestrea por celda dentro del predio — instantáneo y sin cargar el
+  vector pesado. Reporta área y % por clase e inclinación promedio/mín/máx.
 - Módulo **Fuentes de agua y AP**: capa local de **cauces y drenaje** (líneas) que
   muestra el nombre del cauce al pasar el cursor (sin geoproceso), y capas del **WMS
   de la Dirección de Agua** (`mapas.da.go.cr`) descubiertas automáticamente vía el
