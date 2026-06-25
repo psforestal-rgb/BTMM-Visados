@@ -121,9 +121,22 @@ README.md           Este archivo
 
 ## Créditos y fuentes
 
-- Datos de cobertura: SINAC / FONAFIFO.
-- Ortofotos: Instituto Geográfico Nacional (IGN) / SNIT — Costa Rica.
-- Imágenes recientes: Esri World Imagery.
-- Bibliotecas: Leaflet, Turf.js, proj4js, shpjs, sql.js, pako, JSZip, togeojson.
+Fuentes de información por capa (información actualizada al **2026-06-25**):
+
+- **Relieve:** elaboración propia a partir de curvas de nivel a 10 m de la
+  cartografía 1:25.000 publicada en SNIT.
+- **Cobertura forestal:** datos vectoriales descargados de servicios WMS —
+  Cobertura 2021 y 2023 del SNIT; FONAFIFO 2000 y 2005 del CENIGA.
+- **Cauce y drenaje:** datos vectoriales descargados de servicios WMS de la
+  cartografía 1:25.000 publicada en SNIT.
+- **Potencial de inundación:** información de la Comisión Nacional de
+  Emergencias (CNE) publicada en SNIT.
+- **Áreas Silvestres Protegidas y Patrimonio Natural del Estado (PNE):** datos
+  vectoriales descargados de servicios WMS de la información del SINAC publicada
+  en SNIT.
+- **Fincas del Estado (ACC):** capa proporcionada por el Área de Conservación
+  Central (ACC).
+- **Imágenes aéreas recientes:** Esri World Imagery. Ortofotos: IGN / SNIT — Costa Rica.
+- **Bibliotecas:** Leaflet, Turf.js, proj4js, shpjs, sql.js, pako, JSZip, togeojson.
 
 SINAC — Área de Conservación Central — Bloque Tapantí Macizo de la Muerte.
