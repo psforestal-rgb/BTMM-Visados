@@ -83,11 +83,20 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
 - Exportación a documento **Word** (.docx) sobre el **membrete institucional
   oficial SINAC-ACC** (encabezado y pie en todas las páginas). El informe reúne
-  los resultados de **todos los análisis realizados** (Cobertura Forestal, Áreas
-  Silvestres Protegidas y Fincas/PNE), con sus mapas y tablas en una sola columna,
-  centrados, con simbología por vista y flecha norte. El cuerpo del informe se
-  incrusta en la plantilla oficial (`membrete_sinac.dotx`) mediante `altChunk`;
-  para ver el contenido incrustado se recomienda abrir el archivo con Microsoft Word.
+  los resultados de **todos los análisis realizados**, **organizados en el mismo
+  orden que los módulos del visor** (Áreas Silvestres Protegidas → Fincas/PNE →
+  Cobertura Forestal → Terrenos forestales → Fuentes de agua y AP), con sus mapas
+  y tablas en una sola columna. Cada mapa y su título se mantienen en la misma
+  página (sin grandes espacios en blanco) y debajo de cada mapa se deja un
+  **espacio para comentario** (~5 líneas). En el encabezado se agrega el título
+  **«Anexo a informe N.° ____ — pág. n de N»** (con campos de paginación
+  automática de Word). Cada mapa incorpora **grilla de coordenadas CRTM05/EPSG:5367**
+  (dos líneas verticales y dos horizontales en valores enteros terminados en 00,
+  con etiquetas E/N), **escala numérica** (denominador terminado en 00) y **escala
+  gráfica**, además de flecha de norte, simbología por vista e indicación de
+  **proyección y fuentes** usadas. El cuerpo del informe se incrusta en la
+  plantilla oficial (`membrete_sinac.dotx`) mediante `altChunk`; para ver el
+  contenido incrustado se recomienda abrir el archivo con Microsoft Word.
 - La ventana de resultados permanece abierta al cambiar de pestaña (se cierra con
   el botón ✕ o al limpiar el predio).
 
