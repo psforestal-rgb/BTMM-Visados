@@ -39,6 +39,16 @@ enrutan por un proxy OGC (Cloudflare Worker) que añade CORS y caché:
 > Las imágenes Esri Wayback usan sobreampliación hasta zoom 22 cuando la fuente
 > nativa no publica más detalle que zoom 19.
 
+> **Fecha real de la imagen aérea.** El rótulo de cada versión Wayback es su fecha
+> de *publicación*, no la de *captura*. En zonas remotas (como el PNLQ) Esri suele
+> reutilizar la misma imagen durante varias versiones, por lo que 2021 y 2023 pueden
+> verse idénticas pese a sus rótulos. Por eso el título de cada mini-mapa muestra la
+> **fecha real de captura** consultada en tiempo de ejecución a la capa de metadatos
+> de la versión elegida (`World_Imagery_Metadata_*`); si ambas versiones comparten la
+> misma imagen, se muestra un aviso y la misma fecha real en los dos mini-mapas. La
+> imagen "más reciente / dibujo del plano" toma su fecha del servicio World Imagery
+> vigente.
+
 ## Actualización y caché
 
 El visor consulta `version.json` con `cache: "no-store"` y agrega `?v=<version>` a
