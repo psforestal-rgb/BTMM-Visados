@@ -17,7 +17,7 @@ proyección CRTM05 / EPSG:5367** (coincidente con QGIS).
 | Capa | Fuente | Campo | Notas |
 |------|--------|-------|-------|
 | FONAFIFO 2000 | FONAFIFO | USO_COBERT | |
-| FONAFIFO 2005 | FONAFIFO | cobertura | Ajustada +210 m X / −150 m Y (CRTM05) respecto a FONAFIFO 2000; traslación rígida, sin modificar geometría interna |
+| FONAFIFO 2005 | FONAFIFO | cobertura | Ajustada +210 m X / −150 m Y (CRTM05) respecto a FONAFIFO 2000; traslación rígida, sin modificar geometría interna. Uso agropecuario / No forestal se simboliza en amarillo |
 | Tipos de Bosque 2012 | SINAC | TipoBosque | |
 | Cobertura Forestal 2021 | SINAC | Clase | |
 | Cobertura Forestal 2023 | SINAC | Clase | Activa por defecto |
@@ -80,25 +80,22 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 - Botón de zoom al polígono cargado, disponible en todas las pestañas con visor.
 - Capa opcional de **imagen aérea reciente** (Esri World Imagery, con sobreampliación)
   como fondo del visor, activable desde la tarjeta de Referencias en todas las pestañas.
-- Carga de plano PDF como capa referencial: detecta visualmente el contorno del
-  predio en la primera página, recorta el dibujo, elimina el fondo blanco y lo
-  muestra como dibujo transparente sobre todas las capas, sin alterar la geometría
-  oficial ni los cálculos de cobertura. El recorte se valida contra el perímetro
-  del polígono cargado para evitar montajes desplazados por rótulos del PDF.
-- Si la detección automática del PDF no calza, el plano se carga de todos modos
-  como referencia transparente. El botón **Ajuste manual** permite marcar pares
-  de puntos plano/vector, con snapping al vértice vectorial más cercano, y aplicar
-  un ajuste affine con un mínimo de tres pares.
+- Carga de plano PDF o imagen como capa referencial, con selección previa del modo
+  de georreferenciación. El modo **Automático** detecta el contorno, recorta el
+  dibujo y valida el calce sin alterar la geometría oficial ni los cálculos.
+- El modo **Manual** precarga el plano completo y habilita la captura de pares
+  plano/vector, con ajuste al vértice vectorial más cercano y transformación afín
+  a partir de tres o más pares. Si el modo automático falla, conserva el plano y
+  activa esta ruta manual.
 - Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
 - Exportación a documento **Word** (.docx) sobre el **membrete institucional
   oficial SINAC-ACC** (encabezado y pie en todas las páginas). El informe reúne
-  los resultados de **todos los análisis realizados**, **organizados en el mismo
-  orden que los módulos del visor** (Áreas Silvestres Protegidas → Fincas/PNE →
-  Cobertura Forestal → Terrenos forestales → Fuentes de agua y AP), con sus mapas
-  y tablas en una sola columna. Cada mapa y su título se mantienen en la misma
-  página (sin grandes espacios en blanco) y debajo de cada mapa se deja un
-  **espacio para comentario** (~5 líneas). En el encabezado se agrega el título
+  únicamente los módulos seleccionados en el checklist del panel **Informe final**,
+  entre aquellos cuyos análisis ya estén listos. Los resultados se organizan en el
+  mismo orden que los módulos del visor, con sus mapas y tablas en una sola columna.
+  **Cada mapa ocupa una página independiente**, junto con su título, fuente y un
+  espacio para comentario. En el encabezado se agrega el título
   **«Anexo a informe N.° ____ — pág. n de N»** (con campos de paginación
   automática de Word). Cada mapa incorpora **grilla de coordenadas CRTM05/EPSG:5367**
   (dos líneas verticales y dos horizontales en valores enteros terminados en 00,
