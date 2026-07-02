@@ -1,0 +1,13 @@
+# Dependabot solo vigila las GitHub Actions (única superficie con manifiesto).
+# Las librerías del visor están fijadas por URL + SRI en index.html; su
+# actualización es manual y deliberada (ver MANTENIMIENTO.md, «Actualizar
+# dependencias») y está vigilada por el workflow vigilancia-dependencias.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels:
+      - dependency
+      - needs-review

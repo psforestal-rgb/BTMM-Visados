@@ -1,0 +1,45 @@
+name: Vulnerabilidad de seguridad
+description: Reportar un problema de seguridad de la herramienta (no incluya detalles explotables públicos)
+labels: [security, needs-review]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Si la vulnerabilidad permite comprometer datos o usuarios, no
+        publique los detalles completos aquí.** Use el reporte privado de
+        GitHub (Security → Report a vulnerability) o el contacto indicado en
+        `SECURITY.md`, y deje en este issue solo una referencia genérica.
+  - type: dropdown
+    id: severidad
+    attributes:
+      label: Severidad estimada
+      options: [crítica, alta, media, baja]
+    validations:
+      required: true
+  - type: dropdown
+    id: tipo
+    attributes:
+      label: Tipo
+      options:
+        - Dependencia con CVE conocida
+        - XSS / inyección en el visor
+        - Problema en el proxy OGC (Cloudflare Worker)
+        - Exposición de datos que no deberían ser públicos
+        - Problema en GitHub Actions / cadena de suministro
+        - Otro
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión afectada
+      placeholder: 2026-07-02-revision-integral-v34
+    validations:
+      required: true
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Descripción (sin secretos ni datos personales)
+      description: Componente afectado, impacto probable y, si existe, propuesta inicial de mitigación.
+    validations:
+      required: true
