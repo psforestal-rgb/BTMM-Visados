@@ -31,10 +31,11 @@ HTML = r"""<!DOCTYPE html>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob: https://cdn.jsdelivr.net https://server.arcgisonline.com https://services.arcgisonline.com https://wayback.maptiles.arcgis.com https://metadata.maptiles.arcgis.com https://tiles.maps.eox.at https://geos0.snitcr.go.cr https://geos1.snitcr.go.cr https://mapas.da.go.cr https://psforgis-ocg.psforestal.workers.dev; connect-src 'self' data: blob: https://cdn.jsdelivr.net https://server.arcgisonline.com https://services.arcgisonline.com https://wayback.maptiles.arcgis.com https://metadata.maptiles.arcgis.com https://s3-us-west-2.amazonaws.com https://tiles.maps.eox.at https://geos0.snitcr.go.cr https://geos1.snitcr.go.cr https://mapas.da.go.cr https://psforgis-ocg.psforestal.workers.dev; worker-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
 <title>Asistente SIG-VISADOS BTMM</title>
 <link rel="icon" href="favicon.ico?v=2026-06-29-modos-plano-informe-v28">
 <link rel="shortcut icon" href="favicon.ico?v=2026-06-29-modos-plano-informe-v28">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0a1830;--sb:#0c1f3d;--card:#13294d;--acc:#2f5fa0;--acc2:#4a7cc4;--gold:#d9b14a;--moss:#6f8f5e;--txt:#eef3fb;--txt2:#aebbd2;--warn:#e0a44b;--red:#e15b5b}
@@ -737,17 +738,17 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <div id="toast"></div>
 
 <!-- SCRIPTS -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/shpjs@4.0.4/dist/shp.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mapbox/togeojson@0.16.0/togeojson.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js" integrity="sha384-rNlaE5fs9dGIjmxWDALQh/RBAaGRYT5ChrzHo6tRfgrZ36iRFAiquP5g41Jsv+0j" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" integrity="sha384-82q0nm29xZzIo5BMtDYnh2/NxeO6FoaK1S/0nF84w3cEsqbBfun3JdMyDVYWfVY5" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/shpjs@4.0.4/dist/shp.js" integrity="sha384-SvGz+Dog2fS8fxYIE3uf8dViVamrK+czJkTku+kw1+N5jqZULpRyEpT1JqF0PaWh" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mapbox/togeojson@0.16.0/togeojson.js" integrity="sha384-1W2X79PgJqXd2ZBPc6pJUEijRNy0UJbRmZjB2xVGuaanB4TGqlMYGs9M4pICDran" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.9.2/dist/proj4.js" integrity="sha384-ya9rOV6flD2e7foN1ut7/l/2s6X6qzHni8jM2di15mILoBTx+nT9/u/FGLOcNFQG" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-06-30-interface-accessibility-v32';
+const APP_VERSION='2026-07-02-security-hardening-v33';
 window.BTMM_APP_VERSION=APP_VERSION;
 const ASP_GPKG_URL='data/btmm_areas_silvestres_protegidas.gpkg';
 const TERRAIN_RELIEF_GPKG_URL='data/btmm_relieve.gpkg.gz';
@@ -1905,7 +1906,7 @@ async function parseFile(file){
 }
 
 let sqlL=null;
-async function getSQL(){if(!sqlL)sqlL=await initSqlJs({locateFile:f=>`https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${f}`});return sqlL;}
+async function getSQL(){if(!sqlL)sqlL=await initSqlJs({locateFile:f=>`https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/${f}`});return sqlL;}
 async function parseGPKGBuffer(buffer,allowedTypes){
   allowedTypes=allowedTypes||['Polygon','MultiPolygon'];
   const preferGt=allowedTypes.some(t=>t.indexOf('Line')>=0)?'LINESTRING':(allowedTypes.some(t=>t.indexOf('Point')>=0)?'POINT':'POLYGON');
@@ -2824,9 +2825,9 @@ function cropPdfToDetectedPredio(canvas,detected){
 async function renderPdfFirstPage(file){
   if(!window.pdfjsLib)throw new Error('No se pudo cargar PDF.js');
   if(pdfjsLib.GlobalWorkerOptions){
-    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
   }
-  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer(),isEvalSupported:false}).promise;
   if(!pdf.numPages)throw new Error('PDF sin páginas');
   const page=await pdf.getPage(1);
   const vp0=page.getViewport({scale:1});
@@ -2843,11 +2844,12 @@ async function renderPdfFirstPage(file){
 }
 
 /* Carga diferida de una librería externa (una sola vez). */
-function loadScriptOnce(url){
+function loadScriptOnce(url,integrity){
   return new Promise((res,rej)=>{
     if(document.querySelector('script[data-lib="'+url+'"]'))return res();
     const s=document.createElement('script');
     s.src=url;s.dataset.lib=url;
+    if(integrity){s.integrity=integrity;s.crossOrigin='anonymous';}
     s.onload=()=>res();
     s.onerror=()=>rej(new Error('No se pudo cargar la librería: '+url));
     document.head.appendChild(s);
@@ -2872,7 +2874,7 @@ async function renderRasterPlan(file){
   const name=(file.name||'').toLowerCase();
   const isTiff=name.endsWith('.tif')||name.endsWith('.tiff')||file.type==='image/tiff';
   if(isTiff){
-    await loadScriptOnce('https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js');
+    await loadScriptOnce('https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js','sha384-RyBmXHdfZ/Uon+ud+/AqSyWpUWnKYt2tkRG/P4gWoRUGDU+qIAV3tGBPNlYTBZEF');
     if(!window.UTIF)throw new Error('No se pudo cargar el decodificador TIFF');
     const buf=await file.arrayBuffer();
     const ifds=UTIF.decode(buf);
