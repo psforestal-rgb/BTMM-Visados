@@ -103,7 +103,7 @@ for (const [k, v] of Object.entries(libs)) {
 
 console.log('2) Splash, bienvenida y mapa');
 const bienvenida = await page.$eval('#splash-welcome', (el) => el.innerText).catch(() => '');
-['ÁREA DE CONSERVACIÓN CENTRAL', 'BLOQUE TAPANTÍ MACIZO DE LA MUERTE', 'PARQUE NACIONAL LOS QUETZALES', 'Ing. Pablo César Sánchez Núñez']
+['PARQUE NACIONAL LOS QUETZALES', 'Ing. Pablo César Sánchez Núñez']
   .forEach((linea) => bienvenida.includes(linea) ? ok('bienvenida: ' + linea) : fallo('falta línea de bienvenida: ' + linea));
 (await page.$('#splash-video')) ? ok('botón de videotutorial general presente') : fallo('sin botón #splash-video');
 const btn = await page.$('#splash-enter, #splash button, button:has-text("Entrar")');

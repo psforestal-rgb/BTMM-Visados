@@ -92,7 +92,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   background:linear-gradient(92deg,#7a5e1f,#caa23f 16%,#f3e3a3 33%,#fffbe9 46%,#f3e3a3 58%,#caa23f 74%,#7a5e1f);
   background-size:240% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;
   filter:drop-shadow(0 1px 1px rgba(0,0,0,.6))}
-#splash-welcome{font-size:13px;font-weight:700;color:#fff;text-align:center;line-height:1.55;letter-spacing:.5px;
+#splash-welcome{font-size:14px;font-weight:700;color:var(--gold);text-align:center;line-height:1.55;letter-spacing:.5px;
   text-shadow:0 2px 5px rgba(0,0,0,.6),0 1px 1px rgba(0,0,0,.85)}
 #splash-firma{display:inline-block;margin-top:5px;font-size:12px;font-weight:600;letter-spacing:.3px;color:var(--gold)}
 #splash-video{margin-top:9px;width:100%;background:transparent;border:1px dashed #3c5f96;border-radius:8px;
@@ -348,7 +348,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
       <div id="splash-sheen"></div>
     </div>
     <div id="splash-title">Asistente SIG-VISADOS BTMM</div>
-    <div id="splash-welcome">ÁREA DE CONSERVACIÓN CENTRAL<br>BLOQUE TAPANTÍ MACIZO DE LA MUERTE<br>PARQUE NACIONAL LOS QUETZALES<br><span id="splash-firma">Ing. Pablo César Sánchez Núñez</span></div>
+    <div id="splash-welcome">PARQUE NACIONAL LOS QUETZALES<br><span id="splash-firma">Ing. Pablo César Sánchez Núñez</span></div>
     <div id="splash-sub">Ingreso al sistema</div>
     <form id="splash-form" onsubmit="return splashEnter(event)" autocomplete="off">
       <div class="splash-field">
@@ -758,7 +758,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-07-02-bienvenida-videos-v36';
+const APP_VERSION='2026-07-02-bienvenida-pnlq-v37';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6069,7 +6069,7 @@ checks = {
     "Version cache-buster": "APP_VERSION" in HTML and "version.json" in HTML,
     "Registro de errores runtime": "btmmReporteErrores" in HTML and "unhandledrejection" in HTML and "_errSan" in HTML,
     "Revisión local de archivos": "revisarArchivoAntesDeUsar" in HTML and "_revisarPdf" in HTML and "_revisarDocx" in HTML and "SHA-256" in HTML,
-    "Bienvenida institucional y videotutoriales": "ÁREA DE CONSERVACIÓN CENTRAL" in HTML and "PARQUE NACIONAL LOS QUETZALES" in HTML and "Ing. Pablo César Sánchez Núñez" in HTML and "verVideoTutorial" in HTML and "btn-video-tut" in HTML and "splash-video" in HTML,
+    "Bienvenida institucional y videotutoriales": "PARQUE NACIONAL LOS QUETZALES" in HTML and "Ing. Pablo César Sánchez Núñez" in HTML and "verVideoTutorial" in HTML and "btn-video-tut" in HTML and "splash-video" in HTML,
     "Favicon": "favicon.ico" in HTML,
     "Plano PDF referencial": 'id="pdf-fi"' in HTML and "function handlePdfPlanUpload" in HTML and "pdfjsLib" in HTML,
     "Selector de modo del plano": 'id="pdf-mode-automatic"' in HTML and 'id="pdf-mode-manual"' in HTML and "function setPdfPlanMode" in HTML,
