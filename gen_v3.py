@@ -748,8 +748,45 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-07-02-security-hardening-v33';
+const APP_VERSION='2026-07-02-revision-integral-v34';
 window.BTMM_APP_VERSION=APP_VERSION;
+/* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
+   Captura errores no manejados y rechazos de promesas para diagnóstico.
+   No envía nada a ningún servidor: window.btmmReporteErrores() descarga
+   un JSON sanitizado (sin URLs completas, rutas ni datos del predio)
+   que puede adjuntarse a un issue de GitHub. */
+const _ERRLOG=[];const _ERRLOG_MAX=60;
+function _errSan(v){return String(v==null?'':v).replace(/https?:\/\/[^\s"')]+/g,'[url]').replace(/[A-Za-z]:\\[^\s"']+/g,'[ruta]').replace(/\/(?:home|Users)\/[^\s"']+/g,'[ruta]').slice(0,400);}
+function _errPush(tipo,msj,origen,linea,col){try{
+  const e={fecha:new Date().toISOString(),tipo:tipo,mensaje:_errSan(msj),origen:_errSan(origen),linea:linea||null,columna:col||null,version:APP_VERSION};
+  const prev=_ERRLOG.length?_ERRLOG[_ERRLOG.length-1]:null;
+  if(prev&&prev.tipo===e.tipo&&prev.mensaje===e.mensaje){prev.repeticiones=(prev.repeticiones||1)+1;prev.ultima=e.fecha;return;}
+  _ERRLOG.push(e);if(_ERRLOG.length>_ERRLOG_MAX)_ERRLOG.shift();
+}catch(_){}}
+window.addEventListener('error',ev=>{
+  if(ev&&ev.target&&ev.target!==window){
+    const tg=ev.target.tagName||'';
+    if(tg==='IMG')return; /* teselas de mapa: fallo esperado sin conexión, ya hay errorTileUrl */
+    _errPush('recurso','No se pudo cargar <'+tg.toLowerCase()+'>',ev.target.src||ev.target.href,null,null);
+    return;
+  }
+  _errPush('error',(ev&&ev.message)||'error sin detalle',ev&&ev.filename,ev&&ev.lineno,ev&&ev.colno);
+},true);
+window.addEventListener('unhandledrejection',ev=>{
+  const r=ev&&ev.reason;
+  _errPush('promesa',(r&&(r.message||String(r)))||'rechazo sin detalle',r&&r.stack?String(r.stack).split('\n').slice(1,2).join(''):'',null,null);
+});
+window.btmmReporteErrores=function(descargar){
+  if(descargar===undefined)descargar=true;
+  const rep={herramienta:'BTMM-Visados',version:APP_VERSION,generado:new Date().toISOString(),
+    navegador:_errSan(navigator.userAgent),url:location.protocol+'//'+location.host+location.pathname,
+    totalErrores:_ERRLOG.length,errores:_ERRLOG.slice()};
+  if(descargar){const b=new Blob([JSON.stringify(rep,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(b);
+    a.download='btmm-reporte-errores-'+APP_VERSION+'.json';a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),5000);}
+  return rep;};
+
 const ASP_GPKG_URL='data/btmm_areas_silvestres_protegidas.gpkg';
 const TERRAIN_RELIEF_GPKG_URL='data/btmm_relieve.gpkg.gz';
 const TERRAIN_RELIEF_IMAGE_URL='data/btmm_relieve.png';
@@ -5910,6 +5947,7 @@ checks = {
     "TERRA 1997 WMTS": "Ortofoto_TERRA_1997_40k/wmts" in HTML and "REQUEST=GetTile" in HTML,
     "WMTS proxy para TERRA 1997": "function proxiedTile" in HTML and "ProxiedTileLayer" in HTML,
     "Version cache-buster": "APP_VERSION" in HTML and "version.json" in HTML,
+    "Registro de errores runtime": "btmmReporteErrores" in HTML and "unhandledrejection" in HTML and "_errSan" in HTML,
     "Favicon": "favicon.ico" in HTML,
     "Plano PDF referencial": 'id="pdf-fi"' in HTML and "function handlePdfPlanUpload" in HTML and "pdfjsLib" in HTML,
     "Selector de modo del plano": 'id="pdf-mode-automatic"' in HTML and 'id="pdf-mode-manual"' in HTML and "function setPdfPlanMode" in HTML,

@@ -1,0 +1,83 @@
+name: Vigilancia de dependencias externas
+
+# Prueba de contrato semanal: verifica que las librerías fijadas del CDN
+# sigan sirviendo exactamente los bytes esperados (SRI) y que los servicios
+# externos (proxy OGC, SNIT, Dirección de Agua, Esri) respondan.
+# Si el contrato se rompe, abre o actualiza UN issue deduplicado con la
+# etiqueta `vigilancia-automatica` (nunca duplica: si ya hay uno abierto,
+# comenta en él). Sin secretos ni datos sensibles: solo URLs públicas y hashes.
+#
+# Para desactivar los issues automáticos: crear la variable de repositorio
+# VIGILANCIA_ISSUES con valor "off" (Settings → Secrets and variables →
+# Actions → Variables).
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'   # lunes 06:17 UTC (~00:17 Costa Rica)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  contrato-cdn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verificar integridad del CDN y servicios externos
+        id: chequeo
+        run: |
+          set +e
+          python3 scripts/check_cdn_integrity.py | tee resultado.txt
+          echo "codigo=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Registrar issue deduplicado si hay fallos
+        if: steps.chequeo.outputs.codigo != '0' && vars.VIGILANCIA_ISSUES != 'off'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CODIGO: ${{ steps.chequeo.outputs.codigo }}
+        run: |
+          if [ "$CODIGO" = "1" ]; then
+            TITULO="Vigilancia: fallo de integridad en dependencias del CDN"
+            SEVERIDAD="alta"
+            ETIQUETAS="dependency,security,needs-review,vigilancia-automatica"
+          else
+            TITULO="Vigilancia: servicio externo no disponible"
+            SEVERIDAD="media"
+            ETIQUETAS="external-service,needs-review,vigilancia-automatica"
+          fi
+          CUERPO=$(cat <<EOF
+          **Tipo de evento:** $([ "$CODIGO" = "1" ] && echo "dependencia vulnerable o alterada (contrato SRI roto)" || echo "caída de integración externa")
+          **Severidad:** $SEVERIDAD
+          **Fecha y hora:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          **Entorno:** producción (visor publicado en GitHub Pages)
+          **Commit:** \`$GITHUB_SHA\`
+          **Componente:** dependencias externas de \`index.html\`
+          **Ejecución:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          **Salida del chequeo (sanitizada, solo URLs públicas y hashes):**
+          \`\`\`
+          $(tail -c 6000 resultado.txt)
+          \`\`\`
+
+          **Impacto probable:** $([ "$CODIGO" = "1" ] && echo "el navegador bloqueará la librería afectada (SRI); el módulo que depende de ella dejará de funcionar hasta actualizar el hash o la versión fijada." || echo "las capas u ortofotos de ese servicio no cargarán; el resto del visor sigue operativo.")
+          **Propuesta inicial:** revisar MANTENIMIENTO.md, sección «Actualizar dependencias» / «Servicios externos».
+          EOF
+          )
+          EXISTENTE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --label vigilancia-automatica --search "$TITULO in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTENTE" ]; then
+            gh issue comment "$EXISTENTE" --repo "$GITHUB_REPOSITORY" --body "$CUERPO"
+            echo "Comentado en issue existente #$EXISTENTE (sin duplicar)."
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITULO" \
+              --body "$CUERPO" --label "$ETIQUETAS" || \
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITULO" --body "$CUERPO"
+          fi

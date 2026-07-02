@@ -113,12 +113,30 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
 index.html          Visor completo y autónomo (datos y membrete embebidos)
 gen_v3.py           Pipeline Python que genera index.html a partir de los GPKG
 data/               GPKG locales de los módulos ASP y Fincas estatales y PNE (se sirven y cargan en runtime)
+scripts/            Verificaciones: consistencia, integridad CDN (SRI) y smoke test E2E
+.github/            CI, vigilancia semanal de dependencias, Dependabot y plantillas de issues
 membrete_sinac.dotx Plantilla Word del membrete institucional SINAC-ACC (export .docx)
 version.json        Versión publicada para forzar actualización del navegador
 favicon.ico         Icono del sitio
+logo.png            Logo institucional (512 px optimizado)
+MANTENIMIENTO.md    Guía operativa: probar, desplegar, actualizar dependencias, rollback
+SECURITY.md         Modelo de seguridad y cómo reportar vulnerabilidades
 README.md           Este archivo
 .gitignore
 ```
+
+## Mantenimiento, seguridad y verificación
+
+- Librerías de terceros **fijadas por versión + SRI sha384** (jsDelivr) y
+  **Content-Security-Policy** restrictiva: las actualizaciones de terceros no
+  pueden alterar el código que ejecuta el visor.
+- **CI** en cada push/PR: consistencia del repo, smoke test E2E en Chromium y
+  escaneo de secretos. **Vigilancia semanal** del contrato con el CDN y de los
+  servicios externos, con apertura de issue deduplicado si algo se rompe.
+- Errores en runtime: el visor los registra sanitizados en memoria;
+  `btmmReporteErrores()` en la consola (F12) descarga un JSON para adjuntar a
+  un issue.
+- Detalles en [MANTENIMIENTO.md](MANTENIMIENTO.md) y [SECURITY.md](SECURITY.md).
 
 > `gen_v3.py` requiere los GeoPackage originales y `layers_b64.json` (no incluidos por
 > tamaño/sensibilidad). Puede leer `layers_b64.json` junto al script o desde la

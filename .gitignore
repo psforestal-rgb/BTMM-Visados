@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 layers_b64.json
+node_modules/
+package.json
+package-lock.json

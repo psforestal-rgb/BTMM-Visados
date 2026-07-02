@@ -1,0 +1,67 @@
+name: Reporte de error
+description: Un módulo del visor falla, no carga o da resultados incorrectos
+labels: [bug, needs-review]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por reportar. **No adjunte planos ni datos de predios reales
+        si son confidenciales** — un polígono de ejemplo con el mismo problema
+        es suficiente.
+  - type: input
+    id: version
+    attributes:
+      label: Versión del visor
+      description: Se muestra en la ventana de ingreso; o ejecute `BTMM_APP_VERSION` en la consola del navegador (F12).
+      placeholder: 2026-07-02-revision-integral-v34
+    validations:
+      required: true
+  - type: dropdown
+    id: severidad
+    attributes:
+      label: Severidad
+      options: [crítica, alta, media, baja]
+    validations:
+      required: true
+  - type: dropdown
+    id: componente
+    attributes:
+      label: Componente afectado
+      options:
+        - Carga de polígono (SHP/GPKG/KML/GeoJSON)
+        - Análisis de cobertura forestal
+        - Áreas Silvestres Protegidas
+        - Terrenos forestales (relieve / inundación / humedales)
+        - Fuentes de agua y AP
+        - Fincas estatales y PNE
+        - Plano PDF / imagen (georreferenciación)
+        - Exportación a Word
+        - Ortofotos / imágenes aéreas
+        - Otro
+    validations:
+      required: true
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Descripción y pasos de reproducción
+      description: Qué hizo, qué esperaba y qué ocurrió.
+      placeholder: |
+        1. Cargué un GPKG de ~3 ha en …
+        2. Pulsé «Calcular intersección»
+        3. Esperaba … pero ocurrió …
+    validations:
+      required: true
+  - type: textarea
+    id: reporte
+    attributes:
+      label: Reporte de errores del visor (opcional, recomendado)
+      description: >
+        En la consola del navegador (F12) ejecute `btmmReporteErrores()` y
+        adjunte aquí el contenido del JSON descargado. El reporte está
+        sanitizado (sin URLs completas, rutas locales ni datos del predio).
+      render: json
+  - type: input
+    id: navegador
+    attributes:
+      label: Navegador y sistema operativo
+      placeholder: Chrome 126 / Windows 11
