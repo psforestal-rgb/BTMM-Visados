@@ -106,6 +106,13 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   contenido incrustado se recomienda abrir el archivo con Microsoft Word.
 - La ventana de resultados permanece abierta al cambiar de pestaña (se cierra con
   el botón ✕ o al limpiar el predio).
+- **Revisión de seguridad de archivos**: antes de usar un plano PDF/imagen y antes
+  de descargar el informe Word, el visor ejecuta una verificación local en el
+  navegador (estructura, indicadores de contenido activo —JavaScript, adjuntos,
+  ejecutables, macros— y huella SHA-256, sin enviar el archivo a ningún servicio)
+  y muestra el resultado con opción de continuar o cancelar. No sustituye a un
+  antivirus: la huella SHA-256 permite verificar el archivo en el antivirus
+  corporativo o en virustotal.com sin subir el documento.
 
 ## Estructura del repositorio
 

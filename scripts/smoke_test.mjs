@@ -142,7 +142,34 @@ try {
   fallo('análisis: ' + String(e).slice(0, 200));
 }
 
-console.log('6) Registro de errores runtime');
+console.log('6) Revisión local de seguridad de archivos');
+const scan = await page.evaluate(async () => {
+  const out = {};
+  const enc = (s) => new TextEncoder().encode(s).buffer;
+  out.pdfLimpio = _revisarPdf(enc('%PDF-1.4\nhola mundo\n%%EOF')).nivel;
+  out.pdfConJs = _revisarPdf(enc('%PDF-1.4 /OpenAction /JavaScript (app.alert(1))')).nivel;
+  out.noPdf = _revisarPdf(enc('MZ ejecutable')).nivel;
+  out.imgFalsa = _revisarImagen(enc('no soy png'), 'plano.png').nivel;
+  const zip = new JSZip(); zip.file('[Content_Types].xml', '<Types/>'); zip.file('word/document.xml', '<w/>');
+  out.docxLimpio = (await _revisarDocx(await zip.generateAsync({ type: 'arraybuffer' }))).nivel;
+  zip.file('word/vbaProject.bin', 'x');
+  out.docxMacros = (await _revisarDocx(await zip.generateAsync({ type: 'arraybuffer' }))).nivel;
+  return out;
+});
+const esperado = { pdfLimpio: 'ok', pdfConJs: 'peligro', noPdf: 'peligro', imgFalsa: 'peligro', docxLimpio: 'ok', docxMacros: 'peligro' };
+for (const [k, v] of Object.entries(esperado)) {
+  scan[k] === v ? ok(`${k}: ${scan[k]}`) : fallo(`revisión ${k}: esperado ${v}, obtuvo ${scan[k]}`);
+}
+const modalOk = await (async () => {
+  const flujo = page.evaluate(() => revisarArchivoAntesDeUsar(new Blob(['%PDF-1.4 hola']), 'pdf', 'prueba.pdf'));
+  await page.waitForSelector('#scan-modal #scan-ok', { timeout: 10000 });
+  const sha = await page.$eval('#scan-modal', (el) => /Huella SHA-256/.test(el.innerText));
+  await page.click('#scan-modal #scan-ok');
+  return (await flujo) === true && sha;
+})().catch(() => false);
+modalOk ? ok('modal de revisión muestra SHA-256 y confirma') : fallo('flujo del modal de revisión');
+
+console.log('7) Registro de errores runtime');
 const rep = await page.evaluate(() => window.btmmReporteErrores(false));
 rep && rep.herramienta === 'BTMM-Visados' ? ok(`reporte generado (${rep.totalErrores} errores registrados)`) : fallo('btmmReporteErrores no devolvió reporte');
 

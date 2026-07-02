@@ -723,7 +723,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-07-02-revision-integral-v34';
+const APP_VERSION='2026-07-02-revision-archivos-v35';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -787,6 +787,93 @@ const TERRAIN_CLASS_META_URL='data/btmm_relieve_clases_meta.json';
     })
     .catch(()=>{});
 })();
+
+/* ── REVISIÓN LOCAL DE SEGURIDAD DE ARCHIVOS ──
+   Heurística ejecutada íntegramente en el navegador (el archivo NO se envía
+   a ningún servicio): estructura, indicadores de contenido activo
+   (JavaScript, adjuntos, ejecutables, macros) y huella SHA-256.
+   No sustituye a un antivirus; la huella permite verificar el archivo en el
+   antivirus corporativo o en virustotal.com sin subir el documento. */
+async function _sha256Hex(buf){try{const h=await crypto.subtle.digest('SHA-256',buf);return[...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('');}catch(e){return null;}}
+function _peorNivel(hallazgos){return hallazgos.some(h=>h[0]==='peligro')?'peligro':(hallazgos.length?'aviso':'ok');}
+function _revisarPdf(buf){
+  const txt=new TextDecoder('latin1').decode(new Uint8Array(buf));
+  const hallazgos=[];
+  if(txt.slice(0,1024).indexOf('%PDF-')===-1)hallazgos.push(['peligro','El archivo no tiene estructura de PDF válida']);
+  const marcas=[
+    [/\/JavaScript\b|\/JS\s*[(<\[\/]/,'peligro','Indicadores de código JavaScript incrustado'],
+    [/\/Launch\b/,'peligro','Indicadores de acción de ejecución de programas (/Launch)'],
+    [/\/RichMedia\b/,'peligro','Indicadores de contenido multimedia activo (/RichMedia)'],
+    [/\/EmbeddedFiles?\b/,'aviso','Indicadores de archivos adjuntos incrustados'],
+    [/\/OpenAction\b|\/AA\b/,'aviso','Indicadores de acciones automáticas al abrir'],
+    [/\/XFA\b/,'aviso','Indicadores de formularios XFA'],
+    [/\/Encrypt\b/,'aviso','El PDF declara cifrado o restricciones'],
+  ];
+  for(const[mre,niv,msj]of marcas)if(mre.test(txt))hallazgos.push([niv,msj]);
+  const nota=hallazgos.length?'Los indicadores pueden aparecer también dentro de datos comprimidos (falsos positivos). Este visor solo convierte el plano a imagen con la ejecución de scripts deshabilitada; los indicadores importan sobre todo si abre el archivo en otro programa.':'';
+  return{nivel:_peorNivel(hallazgos),hallazgos,nota};
+}
+function _revisarImagen(buf,nombre){
+  const b=new Uint8Array(buf.slice(0,12));const hallazgos=[];
+  const esPng=b[0]===0x89&&b[1]===0x50&&b[2]===0x4E&&b[3]===0x47;
+  const esJpg=b[0]===0xFF&&b[1]===0xD8&&b[2]===0xFF;
+  const esTif=(b[0]===0x49&&b[1]===0x49&&b[2]===0x2A&&b[3]===0)||(b[0]===0x4D&&b[1]===0x4D&&b[2]===0&&b[3]===0x2A);
+  const ext=(nombre.split('.').pop()||'').toLowerCase();
+  const tipoReal=esPng?'png':esJpg?'jpg':esTif?'tif':null;
+  if(!tipoReal)hallazgos.push(['peligro','El contenido no corresponde a una imagen PNG, JPG ni TIF']);
+  else if(!(ext===tipoReal||(ext==='jpeg'&&tipoReal==='jpg')||(ext==='tiff'&&tipoReal==='tif')))hallazgos.push(['aviso','La extensión .'+ext+' no coincide con el contenido real ('+tipoReal.toUpperCase()+')']);
+  return{nivel:_peorNivel(hallazgos),hallazgos,nota:''};
+}
+async function _revisarDocx(buf){
+  const hallazgos=[];
+  try{
+    const zip=await JSZip.loadAsync(buf);
+    const nombres=Object.keys(zip.files);
+    if(nombres.some(n=>/vbaProject/i.test(n)))hallazgos.push(['peligro','Contiene macros VBA']);
+    if(nombres.some(n=>/\.(exe|dll|js|vbs|bat|ps1|jar)$/i.test(n)))hallazgos.push(['peligro','Contiene archivos ejecutables o scripts']);
+    if(!nombres.includes('[Content_Types].xml')||!nombres.some(n=>n.startsWith('word/')))hallazgos.push(['aviso','Estructura OOXML incompleta']);
+    for(const n of nombres.filter(x=>x.endsWith('.rels'))){
+      const s=await zip.files[n].async('string');
+      if(/TargetMode="External"/.test(s)&&/Target="(?!mailto:)[a-z]+:\/\//.test(s))hallazgos.push(['aviso','Declara vínculos a recursos externos ('+n+')']);
+    }
+  }catch(e){hallazgos.push(['aviso','No se pudo inspeccionar el contenedor del documento']);}
+  return{nivel:_peorNivel(hallazgos),hallazgos,nota:'Documento generado localmente por este visor; la revisión confirma que no lleva macros ni ejecutables.'};
+}
+function _revisionModal(titulo,r,sha,accion){
+  return new Promise(res=>{
+    const viejo=document.getElementById('scan-modal');if(viejo)viejo.remove();
+    const m=document.createElement('div');m.id='scan-modal';
+    m.style.cssText='position:fixed;inset:0;background:rgba(4,10,24,.72);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
+    const col={ok:'#3fbf6a',aviso:'#e2b23a',peligro:'#e05555'}[r.nivel];
+    const rot={ok:'✔ Sin indicadores de riesgo',aviso:'⚠ Revisión con avisos',peligro:'⛔ Indicadores de riesgo detectados'}[r.nivel];
+    const items=r.hallazgos.length?'<ul style="margin:8px 0 0 18px;padding:0">'+r.hallazgos.map(h=>'<li style="margin:3px 0">'+htmlEsc(h[1])+'</li>').join('')+'</ul>':'<div style="margin-top:8px">No se encontraron indicadores de contenido activo ni estructuras peligrosas.</div>';
+    const btn='padding:7px 14px;border-radius:6px;border:1px solid #2c4a7c;cursor:pointer;font-weight:700;font-size:13px';
+    m.innerHTML='<div role="dialog" aria-modal="true" aria-label="Revisión de seguridad del archivo" style="max-width:540px;width:100%;background:#0d1f3c;border:1px solid #2c4a7c;border-radius:10px;padding:18px;color:#dfe9f7;font-size:13px;line-height:1.5;box-shadow:0 12px 40px rgba(0,0,0,.5)">'
+      +'<div style="font-weight:700;font-size:15px;margin-bottom:4px">🛡️ Revisión de seguridad del archivo</div>'
+      +'<div style="color:#9db4d6">'+htmlEsc(titulo)+'</div>'
+      +'<div style="margin-top:10px;padding:8px 10px;border-radius:6px;border:1px solid '+col+';color:'+col+';font-weight:700">'+rot+'</div>'
+      +items
+      +(r.nota?'<div style="margin-top:8px;color:#9db4d6;font-size:11.5px">'+htmlEsc(r.nota)+'</div>':'')
+      +(sha?'<div style="margin-top:10px;font-size:11px;word-break:break-all;color:#9db4d6"><b>Huella SHA-256:</b> '+sha+'</div>':'')
+      +'<div style="margin-top:8px;color:#9db4d6;font-size:11.5px"><b>Medio de revisión:</b> verificación local en su navegador (el archivo no se envía a ningún servicio): estructura, indicadores de contenido activo y huella SHA-256. No sustituye a un antivirus; puede verificar la huella en su antivirus o en virustotal.com sin subir el documento.</div>'
+      +'<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'
+      +'<button id="scan-cancel" style="'+btn+';background:#12294d;color:#c9d8ef">Cancelar</button>'
+      +'<button id="scan-ok" style="'+btn+';background:'+(r.nivel==='peligro'?'#5a1f1f':'#14431a')+';color:#eaf5ec;border-color:'+col+'">'+htmlEsc(accion)+'</button></div></div>';
+    document.body.appendChild(m);
+    m.querySelector('#scan-ok').onclick=()=>{m.remove();res(true);};
+    m.querySelector('#scan-cancel').onclick=()=>{m.remove();res(false);};
+  });
+}
+async function revisarArchivoAntesDeUsar(archivo,clase,nombre){
+  const nom=nombre||archivo.name||'archivo';
+  toast('🛡️ Revisando «'+nom+'» (verificación local en el navegador)…',false,2500);
+  let buf;try{buf=await archivo.arrayBuffer();}catch(e){toast('No se pudo leer el archivo para revisarlo',true,4000);return false;}
+  const sha=await _sha256Hex(buf);
+  const r=clase==='pdf'?_revisarPdf(buf):clase==='docx'?await _revisarDocx(buf):_revisarImagen(buf,nom);
+  const accion=clase==='docx'?'Descargar documento':'Usar el archivo';
+  return _revisionModal(nom+' · '+Math.max(1,Math.round((archivo.size||buf.byteLength)/1024))+' KB',r,sha,accion);
+}
+
 proj4.defs("EPSG:5367","+proj=tmerc +lat_0=0 +lon_0=-84 +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
 proj4.defs("EPSG:8908","+proj=tmerc +lat_0=0 +lon_0=-84 +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
 proj4.defs("EPSG:32616","+proj=utm +zone=16 +datum=WGS84 +units=m +no_defs");
@@ -3122,6 +3209,7 @@ async function handlePdfPlanUpload(file){
   const manual=S.pdfMode==='manual';
   const isImg=!isPlanPdf(file.name);
   const tipo=isImg?'imagen':'PDF';
+  if(!await revisarArchivoAntesDeUsar(file,isImg?'imagen':'pdf')){document.getElementById('pdf-fi').value='';toast('Carga del plano cancelada tras la revisión',true,3500);return;}
   showProg(true);setProg(15,`Leyendo plano (${tipo})…`);
   try{
     const bounds=getUserLatLngBounds();
@@ -5759,7 +5847,10 @@ async function exportWord(){
     await new Promise(r=>setTimeout(r,30));
     const body=_buildDocBody(data);
     const blob=await _buildDocx(body);
-    _downloadBlob(blob,'Informe_analisis_PNLQ_'+_stamp()+'.docx');
+    const _fnameDocx='Informe_analisis_PNLQ_'+_stamp()+'.docx';
+    setProg(96,'Revisando documento (verificación local)…');
+    if(!await revisarArchivoAntesDeUsar(blob,'docx',_fnameDocx)){showProg(false);toast('Descarga cancelada tras la revisión',true,3500);return;}
+    _downloadBlob(blob,_fnameDocx);
     setProg(100,'✅ Documento generado');
     toast('✅ Documento Word generado');
     setTimeout(()=>showProg(false),600);
