@@ -101,11 +101,21 @@ for (const [k, v] of Object.entries(libs)) {
   v ? ok(k) : fallo('librería/función no disponible: ' + k);
 }
 
-console.log('2) Splash y mapa');
+console.log('2) Splash, bienvenida y mapa');
+const bienvenida = await page.$eval('#splash-welcome', (el) => el.innerText).catch(() => '');
+['ÁREA DE CONSERVACIÓN CENTRAL', 'BLOQUE TAPANTÍ MACIZO DE LA MUERTE', 'PARQUE NACIONAL LOS QUETZALES', 'Ing. Pablo César Sánchez Núñez']
+  .forEach((linea) => bienvenida.includes(linea) ? ok('bienvenida: ' + linea) : fallo('falta línea de bienvenida: ' + linea));
+(await page.$('#splash-video')) ? ok('botón de videotutorial general presente') : fallo('sin botón #splash-video');
 const btn = await page.$('#splash-enter, #splash button, button:has-text("Entrar")');
 if (btn) await btn.click();
 await page.waitForTimeout(1500);
 (await page.$('.leaflet-container')) ? ok('mapa Leaflet inicializado') : fallo('sin contenedor Leaflet');
+const nVid = await page.$$eval('.btn-video-tut', (els) => els.length);
+nVid === 7 ? ok('7 botones de video tutorial por módulo') : fallo('botones de video por módulo: ' + nVid);
+await page.click('#panel-carga .btn-video-tut');
+await page.waitForTimeout(300);
+const toastVid = await page.$eval('#toast', (el) => el.innerText).catch(() => '');
+/en desarrollo/i.test(toastVid) ? ok('aviso «en desarrollo» al pulsar el botón') : fallo('toast de video: ' + toastVid.slice(0, 80));
 
 console.log('3) sql.js / WASM bajo CSP');
 const wasm = await page.evaluate(async () => {
