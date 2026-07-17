@@ -5034,6 +5034,25 @@ function _drawNorthArrow(ctx,w,h,scale){
 const PREDIO_LEGEND_ITEM={label:'Predio analizado',color:'#f7d04a',outline:true};
 const ASP_REF_LEGEND_ITEM={label:'Áreas Silvestres Protegidas (límite)',color:'#000000',hatch:true};
 const MASK_LEGEND_ITEM={label:MASK_LEGEND_LABEL,color:'#000000',outline:true};
+/* ¿El perímetro del área cubierta cruza la vista? Si el encuadre queda por
+   completo dentro (o fuera) del área, la línea punteada no se ve y el ítem
+   se omite de la simbología del mapa del informe. */
+function maskOutlineInView(bounds){
+  if(!bounds||!bounds.isValid||!bounds.isValid())return true;
+  try{
+    const vb=turf.bboxPolygon([bounds.getWest(),bounds.getSouth(),bounds.getEast(),bounds.getNorth()]);
+    const g=COVERAGE_MASK_GJ.geometry;
+    const polys=g.type==='Polygon'?[g.coordinates]:g.coordinates;
+    const lines={type:'Feature',properties:{},geometry:{type:'MultiLineString',coordinates:polys.flatMap(p=>p)}};
+    return !!turf.booleanIntersects(vb,lines);
+  }catch(e){return true;}
+}
+/* Ítem de simbología del límite, condicionado a la vista (mapa o bounds). */
+function maskLegendItems(mOrBounds){
+  let b=null;
+  try{b=(mOrBounds&&typeof mOrBounds.getBounds==='function')?mOrBounds.getBounds():mOrBounds;}catch(e){b=null;}
+  return maskOutlineInView(b)?[MASK_LEGEND_ITEM]:[];
+}
 /* Simbología categorizada de ASP (nombre + color). Si se pasa el mapa, solo
    lista las que intersecan la vista para describir lo realmente representado. */
 function aspLegendItems(m){
@@ -5100,11 +5119,10 @@ function legendItemsForReportMap(cfg,bounds){
   if(cfg.pdfPlan)return [
     {label:'Dibujo del plano',color:'#000000',line:true},
     {label:'Predio de análisis',color:PREDIO_LINE,outline:true},
-    ASP_REF_LEGEND_ITEM,
-    MASK_LEGEND_ITEM
-  ];
+    ASP_REF_LEGEND_ITEM
+  ].concat(maskLegendItems(bounds));
   if(!cfg.coverageKey)return [];
-  return coverageClassesInView(cfg.coverageKey,bounds).map(cls=>({label:cls,color:getColor(cfg.coverageKey,cls)})).concat([ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM,MASK_LEGEND_ITEM]);
+  return coverageClassesInView(cfg.coverageKey,bounds).map(cls=>({label:cls,color:getColor(cfg.coverageKey,cls)})).concat([ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM]).concat(maskLegendItems(bounds));
 }
 
 function orthoDateLabel(key){
@@ -5471,7 +5489,7 @@ async function captureAspMap(userGeoJSON,rows,zoom,w,h){
       _drawStyledPolys(ctx,m,S.aspGJ,styleFn,s);_drawCoverageMask(ctx,m,s);
       _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
       _drawPredioMarker(ctx,m,userGeoJSON,s);
-      _drawLegend(ctx,aspLegendItems(m).concat([PREDIO_LEGEND_ITEM,MASK_LEGEND_ITEM]),w,h,s,'Áreas Silvestres Protegidas');
+      _drawLegend(ctx,aspLegendItems(m).concat([PREDIO_LEGEND_ITEM]).concat(maskLegendItems(m)),w,h,s,'Áreas Silvestres Protegidas');
     },w,h,FUENTES.asp);
   }
   const bounds=_extendWithPredio(boundsFromGeoJSON(S.aspGJ),userGeoJSON);
@@ -5479,7 +5497,7 @@ async function captureAspMap(userGeoJSON,rows,zoom,w,h){
     _drawStyledPolys(ctx,m,S.aspGJ,styleFn,s);_drawCoverageMask(ctx,m,s);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',2);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
-    _drawLegend(ctx,aspLegendItems(m).concat([PREDIO_LEGEND_ITEM,MASK_LEGEND_ITEM]),w,h,s,'Áreas Silvestres Protegidas');
+    _drawLegend(ctx,aspLegendItems(m).concat([PREDIO_LEGEND_ITEM]).concat(maskLegendItems(m)),w,h,s,'Áreas Silvestres Protegidas');
   },w,h,FUENTES.esri+' · '+FUENTES.asp);
 }
 async function capturePneMap(cfg,userGeoJSON,w,h){
@@ -5493,7 +5511,7 @@ async function capturePneMap(cfg,userGeoJSON,w,h){
     _drawPredioMarker(ctx,m,userGeoJSON,s);
     const _pneItems=[{label:cfg.label,color:cfg.color}];
     if(cfg.type==='finca')_pneItems.push({label:'N.° de finca y plano (rótulo)',color:cfg.color,outline:true});
-    _pneItems.push(ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM,MASK_LEGEND_ITEM);
+    _pneItems.push(ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM,...maskLegendItems(m));
     _drawLegend(ctx,_pneItems,w,h,s,'Simbología');
   },w,h,pneFuente(cfg.id));
 }
@@ -5523,7 +5541,7 @@ async function captureTerrainMap(kind,userGeoJSON,w,h){
       _drawAspReference(ctx,m,s,userGeoJSON);_drawCoverageMask(ctx,m,s);
       _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
       _drawPredioMarker(ctx,m,userGeoJSON,s);
-      _drawLegend(ctx,reliefLegend.concat([ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM,MASK_LEGEND_ITEM]),w,h,s,'Clases de pendiente (relieve · % de pendiente)');
+      _drawLegend(ctx,reliefLegend.concat([ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM]).concat(maskLegendItems(m)),w,h,s,'Clases de pendiente (relieve · % de pendiente)');
     },w,h,FUENTES.relieve);
   }
   if(kind==='humedales'){
@@ -5534,7 +5552,7 @@ async function captureTerrainMap(kind,userGeoJSON,w,h){
       _drawAspReference(ctx,m,s,userGeoJSON);_drawCoverageMask(ctx,m,s);
       _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
       _drawPredioMarker(ctx,m,userGeoJSON,s);
-      _drawLegend(ctx,[{label:'Humedal',color:'#17a2b8'},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM,MASK_LEGEND_ITEM],w,h,s,'Simbología');
+      _drawLegend(ctx,[{label:'Humedal',color:'#17a2b8'},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM].concat(maskLegendItems(m)),w,h,s,'Simbología');
     },w,h,FUENTES.humedales);
   }
   const gj=await loadTerrainFloodData();
@@ -5544,7 +5562,7 @@ async function captureTerrainMap(kind,userGeoJSON,w,h){
     _drawAspReference(ctx,m,s,userGeoJSON);_drawCoverageMask(ctx,m,s);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
-    _drawLegend(ctx,[{label:'Potencial de inundación',color:'#2b8cc4'},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM,MASK_LEGEND_ITEM],w,h,s,'Simbología');
+    _drawLegend(ctx,[{label:'Potencial de inundación',color:'#2b8cc4'},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM].concat(maskLegendItems(m)),w,h,s,'Simbología');
   },w,h,FUENTES.inundacion);
 }
 async function captureFuentesMap(userGeoJSON,w,h){
@@ -5557,7 +5575,7 @@ async function captureFuentesMap(userGeoJSON,w,h){
     _drawDictLabels(ctx,m,s,userGeoJSON);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
-    _drawLegend(ctx,[{label:'Cauce y drenaje',color:'#1f74c0',line:true},{label:'Dictámenes DA (punto)',color:'#e83e8c',point:true},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM,MASK_LEGEND_ITEM],w,h,s,'Simbología');
+    _drawLegend(ctx,[{label:'Cauce y drenaje',color:'#1f74c0',line:true},{label:'Dictámenes DA (punto)',color:'#e83e8c',point:true},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM].concat(maskLegendItems(m)),w,h,s,'Simbología');
   },w,h,FUENTES.cauce+' · Dictámenes WFS — Dirección de Agua (DA, SNIT)',dict.map(l=>({url:DA_WMS_BASE,layers:l.name})),{noImagery:true});
 }
 /* Dibujo del predio para el Word: acercamiento máximo al polígono cargado y, si
@@ -5576,7 +5594,7 @@ async function captureFuentesDrawMap(userGeoJSON,w,h){
     _drawCoverageMask(ctx,m,s);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#8a6d00','rgba(247,208,74,0.18)',3);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
-    const items=[PREDIO_LEGEND_ITEM,MASK_LEGEND_ITEM];
+    const items=[PREDIO_LEGEND_ITEM].concat(maskLegendItems(m));
     if(pimg)items.push({label:'Dibujo del plano',color:'#000000',line:true});
     _drawLegend(ctx,items,w,h,s,'Dibujo del predio');
   },w,h,'Dibujo del predio — geometría del polígono cargado'+(S.pdfName?' y plano: '+S.pdfName:''));
