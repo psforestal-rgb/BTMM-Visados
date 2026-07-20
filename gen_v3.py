@@ -497,6 +497,12 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
       <button class="btn bd" id="btn-pdf-clear" style="display:none" onclick="clearPdfPlanLayer()">✖ Limpiar plano</button>
       <div id="pdf-info" style="display:none;font-size:10px;color:#9bc99a;line-height:1.35;margin-top:4px"></div>
     </div>
+    <div class="pnl">
+      <div class="pt">📐 Importar predio desde plano</div>
+      <div style="font-size:11px;color:#9db4d6;line-height:1.45;margin-bottom:6px">Obtenga el polígono desde un plano (PDF/TIF/PNG/JPG) por listado de coordenadas Este–Norte, derrotero de rumbo o azimut y distancia. OCR asistido con confirmación manual; el plano no se envía a ningún servicio.</div>
+      <button class="btn bp" type="button" onclick="openPlanoImport()">📐 Abrir asistente de importación</button>
+      <div style="font-size:10px;color:#8aa0bd;margin-top:5px;line-height:1.4">Genera una <b>geometría derivada de plano</b> para verificar contra la cartografía oficial.</div>
+    </div>
     <div style="font-size:10px;color:#6a82a0;text-align:center;padding:3px">PNLQ–ACC-SINAC · v1.2 · Datos: SINAC / FONAFIFO<br>Resolución completa · áreas en CRTM05/EPSG:5367</div>
   </div>
 
@@ -760,7 +766,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-07-17-area-cubierta-v38';
+const APP_VERSION='2026-07-20-importar-plano-v39';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -915,6 +921,8 @@ proj4.defs("EPSG:5367","+proj=tmerc +lat_0=0 +lon_0=-84 +k=0.9999 +x_0=500000 +y
 proj4.defs("EPSG:8908","+proj=tmerc +lat_0=0 +lon_0=-84 +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
 proj4.defs("EPSG:32616","+proj=utm +zone=16 +datum=WGS84 +units=m +no_defs");
 proj4.defs("EPSG:32617","+proj=utm +zone=17 +datum=WGS84 +units=m +no_defs");
+proj4.defs("EPSG:5456","+proj=lcc +lat_1=10.46666666666667 +lat_0=10.46666666666667 +lon_0=-84.33333333333333 +k_0=0.99995696 +x_0=500000 +y_0=271820.522 +ellps=clrk66 +towgs84=213.11,9.37,-74.95,0,0,0,0 +units=m +no_defs");
+proj4.defs("EPSG:5457","+proj=lcc +lat_1=9 +lat_0=9 +lon_0=-83.66666666666667 +k_0=0.99989906 +x_0=500000 +y_0=327987.436 +ellps=clrk66 +towgs84=213.11,9.37,-74.95,0,0,0,0 +units=m +no_defs");
 
 /* ── LAYER METADATA (orden cronológico) ── */
 const LM={
@@ -5979,6 +5987,928 @@ async function exportWord(){
   }finally{
     if(btn)btn.disabled=false;
   }
+}
+
+
+/*__PI_CORE_START__ — Núcleo determinista de «Importar predio desde plano».
+   Sin dependencias del DOM. proj4 se toma del ámbito global si existe (para la
+   reproyección); las funciones de parsing y geometría no lo requieren. Bloque
+   idéntico en index.html y gen_v3.py; extraíble para pruebas en Node. */
+(function(root){
+'use strict';
+var PI={};
+
+/* Número con coma o punto decimal y separadores de miles (es-CR y en-US). */
+PI.parseNumber=function(v){
+  if(v==null)return NaN;
+  if(typeof v==='number')return v;
+  var s=String(v).trim().replace(/\s+/g,'');
+  if(!s||!/[0-9]/.test(s))return NaN;
+  var neg=/^-/.test(s); s=s.replace(/^[+\-]/,'');
+  var hasC=s.indexOf(',')>-1, hasD=s.indexOf('.')>-1, out;
+  if(hasC&&hasD){
+    var dec=s.lastIndexOf(',')>s.lastIndexOf('.')?',':'.';
+    var tho=dec===','?'.':',';
+    out=s.split(tho).join('').replace(dec,'.');
+  }else if(hasC||hasD){
+    var sep=hasC?',':'.';
+    var pura=new RegExp('^\\d{1,3}(\\'+sep+'\\d{3})+$');
+    if(pura.test(s)){ out=s.split(sep).join(''); }
+    else {
+      var parts=s.split(sep);
+      out=parts.slice(0,-1).join('')+'.'+parts.slice(-1); // último separador = decimal
+    }
+  }else out=s;
+  var n=parseFloat(out);
+  return isFinite(n)?(neg?-n:n):NaN;
+};
+
+/* Grados decimales desde G/M/S o decimal (magnitud, sin signo de cuadrante). */
+PI.parseDMS=function(v){
+  if(v==null)return NaN;
+  if(typeof v==='number')return v;
+  var s=String(v).trim();
+  if(!s)return NaN;
+  var m=s.match(/\d+(?:[.,]\d+)?/g);
+  if(!m||!m.length)return NaN;
+  var d=PI.parseNumber(m[0])||0, mi=m[1]?(PI.parseNumber(m[1])||0):0, se=m[2]?(PI.parseNumber(m[2])||0):0;
+  return d + mi/60 + se/3600;
+};
+
+/* Rumbo topográfico o azimut → azimut decimal [0,360). Acepta O y W como oeste. */
+PI.parseBearing=function(v){
+  if(v==null)return null;
+  var s=String(v).trim();
+  if(!s)return null;
+  var up=s.toUpperCase()
+    .replace(/OESTE/g,'W').replace(/ESTE/g,'E').replace(/NORTE/g,'N').replace(/\bSUR\b/g,'S');
+  var q=up.match(/([NS])\s*([0-9°º'"´’″,.\s]+?)\s*([EWO])/);
+  if(q){
+    var ns=q[1], ew=(q[3]==='O')?'W':q[3];
+    var ang=PI.parseDMS(q[2]);
+    if(!isFinite(ang))return null;
+    var az;
+    if(ns==='N'&&ew==='E')az=ang;
+    else if(ns==='S'&&ew==='E')az=180-ang;
+    else if(ns==='S'&&ew==='W')az=180+ang;
+    else az=360-ang; // N..W
+    az=((az%360)+360)%360;
+    return {azimuth:az,kind:'rumbo',ns:ns,ew:ew,angle:ang,raw:s};
+  }
+  var a=PI.parseDMS(up.replace(/[NSEWOº°'"´’″]/g,' '));
+  if(isFinite(a)){ return {azimuth:((a%360)+360)%360,kind:'azimut',raw:s}; }
+  return null;
+};
+
+PI.centroid=function(ring){
+  var x=0,y=0,n=ring.length; for(var i=0;i<n;i++){x+=ring[i][0];y+=ring[i][1];}
+  return [x/n,y/n];
+};
+PI.shoelaceArea=function(ring){
+  var s=0,n=ring.length; if(n<3)return 0;
+  for(var i=0;i<n;i++){var a=ring[i],b=ring[(i+1)%n]; s+=a[0]*b[1]-b[0]*a[1];}
+  return Math.abs(s)/2;
+};
+PI.perimeter=function(ring){
+  var p=0,n=ring.length; if(n<2)return 0;
+  for(var i=0;i<n;i++){var a=ring[i],b=ring[(i+1)%n]; p+=Math.hypot(b[0]-a[0],b[1]-a[1]);}
+  return p;
+};
+
+/* Construye un polígono desde una lista ordenada de vértices [X,Y]; cierra el
+   último con el primero. No modifica coordenadas. */
+PI.buildFromCoords=function(pointsXY){
+  var pts=pointsXY.filter(function(p){return p&&isFinite(p[0])&&isFinite(p[1]);});
+  // elimina un posible vértice de cierre duplicado al final
+  if(pts.length>=2){
+    var a=pts[0],b=pts[pts.length-1];
+    if(Math.abs(a[0]-b[0])<1e-6&&Math.abs(a[1]-b[1])<1e-6)pts=pts.slice(0,-1);
+  }
+  return {vertices:pts, area:PI.shoelaceArea(pts), perimeter:PI.perimeter(pts), closed:true};
+};
+
+/* Poligonal por derrotero desde un origen local. legs:[{azimuth,distance}].
+   Convención topográfica: azimut horario desde el Norte; dE=d·sin(az), dN=d·cos(az).
+   No ajusta el cierre: reporta el error de cierre absoluto y relativo. */
+PI.buildTraverse=function(legs, origin){
+  var o=origin||[0,0];
+  var pts=[[o[0],o[1]]], x=o[0], y=o[1], per=0, used=[];
+  for(var i=0;i<legs.length;i++){
+    var az=legs[i].azimuth, d=legs[i].distance;
+    if(!isFinite(az)||!isFinite(d))continue;
+    var r=az*Math.PI/180;
+    x+=d*Math.sin(r); y+=d*Math.cos(r); per+=d;
+    pts.push([x,y]); used.push(legs[i]);
+  }
+  var N=used.length;
+  var vertices=pts.slice(0,N);            // N vértices de un polígono de N lados
+  var landing=pts[N]||[o[0],o[1]];        // punto de retorno (deriva)
+  var cx=landing[0]-o[0], cy=landing[1]-o[1];
+  var closureAbs=Math.hypot(cx,cy);
+  var area=PI.shoelaceArea(vertices);
+  return {
+    vertices:vertices, landing:landing, closureVec:[cx,cy], closureAbs:closureAbs,
+    perimeter:per, area:area,
+    relClosure: closureAbs>1e-9 ? (per/closureAbs) : Infinity  // 1:relClosure
+  };
+};
+
+/* Traslación + rotación rígida alrededor de un centro (por defecto el centroide).
+   Preserva área y forma; no escala ni mueve vértices individuales. */
+PI.transform=function(ring, dx, dy, rotDeg, center){
+  var c=center||PI.centroid(ring);
+  var r=(rotDeg||0)*Math.PI/180, cos=Math.cos(r), sin=Math.sin(r);
+  dx=dx||0; dy=dy||0;
+  return ring.map(function(p){
+    var ox=p[0]-c[0], oy=p[1]-c[1];
+    var rx=ox*cos-oy*sin, ry=ox*sin+oy*cos;
+    return [rx+c[0]+dx, ry+c[1]+dy];
+  });
+};
+
+function median(arr){
+  var a=arr.slice().sort(function(x,y){return x-y;}); var n=a.length;
+  return n?(n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2):NaN;
+}
+
+/* Clasifica el CRS de una lista de puntos proyectados/geográficos con evidencia
+   textual opcional. Devuelve candidatos ordenados por confianza; el consumidor
+   debe exigir confirmación del usuario cuando la confianza es baja. */
+PI.classifyCRS=function(points, text){
+  text=(text||'').toUpperCase();
+  var ev=[];
+  if(/CRTM ?05|EPSG:? ?5367|\b5367\b|CR ?05/.test(text))ev.push('EPSG:5367');
+  if(/LAMBERT[^]*NORTE|NORTE[^]*LAMBERT/.test(text))ev.push('EPSG:5456');
+  if(/LAMBERT[^]*SUR|SUR[^]*LAMBERT/.test(text))ev.push('EPSG:5457');
+  if(/\bUTM\b/.test(text))ev.push(/17\s*[NP]|ZONA\s*17/.test(text)?'EPSG:32617':'EPSG:32616');
+  if(/\bWGS ?84\b|GEOGR[ÁA]FIC|LAT[ ,]|LONGITUD/.test(text))ev.push('EPSG:4326');
+  var xs=points.map(function(p){return Math.abs(p[0]);});
+  var ys=points.map(function(p){return Math.abs(p[1]);});
+  var mx=median(xs), my=median(ys), cands=[];
+  if(mx<=180&&my<=90){
+    cands.push({crs:'EPSG:4326',conf:0.9,label:'Geográficas WGS84 (lon/lat)'});
+  }else if(my>800000){                    // Norte ≈ 1·10⁶ → CRTM05 o UTM
+    cands.push({crs:'EPSG:5367',conf:0.5,label:'CRTM05 / EPSG:5367'});
+    cands.push({crs:'EPSG:32616',conf:0.3,label:'UTM 16N / EPSG:32616'});
+    cands.push({crs:'EPSG:32617',conf:0.2,label:'UTM 17N / EPSG:32617'});
+  }else if(my>150000&&my<650000){         // Norte ≈ 2–5·10⁵ → Lambert CR
+    cands.push({crs:'EPSG:5456',conf:0.45,label:'Lambert Norte CR'});
+    cands.push({crs:'EPSG:5457',conf:0.4,label:'Lambert Sur CR'});
+  }else{
+    cands.push({crs:'EPSG:5367',conf:0.2,label:'CRTM05 / EPSG:5367'});
+    cands.push({crs:'EPSG:5456',conf:0.15,label:'Lambert Norte CR'});
+  }
+  // La evidencia textual eleva la confianza del candidato coincidente.
+  ev.forEach(function(c){
+    var f=cands.filter(function(k){return k.crs===c;})[0];
+    if(f){f.conf=Math.min(0.98,f.conf+0.4);f.evidence=true;}
+    else cands.push({crs:c,conf:0.6,label:c,evidence:true});
+  });
+  cands.sort(function(a,b){return b.conf-a.conf;});
+  var best=cands[0];
+  return {best:best.crs, confidence:best.conf, candidates:cands, evidence:ev,
+    needsUser: best.conf<0.75};
+};
+
+/* Reproyecta un anillo [X,Y] del CRS indicado a [lng,lat] (EPSG:4326) con proj4
+   del ámbito global. Para EPSG:4326 asume el orden [lon,lat]. */
+PI.toLngLat=function(ringXY, crs){
+  var p4=root.proj4;
+  if(crs==='EPSG:4326')return ringXY.map(function(p){return [p[0],p[1]];});
+  if(!p4)throw new Error('proj4 no disponible');
+  return ringXY.map(function(p){return p4(crs,'EPSG:4326',[p[0],p[1]]);});
+};
+
+/* Validación de una tabla de coordenadas: marca duplicados, repetidos, fuera de
+   rango y posible intercambio Este/Norte. No corrige; sólo señala. */
+PI.validateCoords=function(rows){
+  var flags=rows.map(function(){return {};});
+  var seen={};
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i], e=r.e, n=r.n;
+    if(!isFinite(e)||!isFinite(n)){flags[i].missing=true;continue;}
+    var key=e.toFixed(3)+'|'+n.toFixed(3);
+    if(seen[key]!=null){flags[i].duplicate=true;flags[seen[key]].duplicate=true;}
+    else seen[key]=i;
+  }
+  // Detección de intercambio E/N: en CR el Norte (Y) suele ser > Este (X) en
+  // CRTM05/UTM (Y≈10⁶ > X). Si la mayoría tiene Y<X de forma marcada, avisar.
+  var proj=rows.filter(function(r){return isFinite(r.e)&&isFinite(r.n)&&(Math.abs(r.e)>1000||Math.abs(r.n)>1000);});
+  if(proj.length){
+    var swapped=proj.filter(function(r){return Math.abs(r.n)>800000 && Math.abs(r.e)>800000 && Math.abs(r.e)>Math.abs(r.n);});
+    // heurística suave: se marca a nivel de tabla, no por fila
+  }
+  return flags;
+};
+
+// Exporta al ámbito (window.PI en el navegador; module.exports en Node de prueba).
+root.PI=PI;
+if(typeof module!=='undefined'&&module.exports)module.exports=PI;
+})(typeof window!=='undefined'?window:(typeof globalThis!=='undefined'?globalThis:this));
+/*__PI_CORE_END__*/
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   IMPORTAR PREDIO DESDE PLANO — asistente (UI, OCR, ubicación y ajuste).
+   Procesamiento 100 % local en el navegador. Reutiliza pdfjsLib, proj4, Leaflet,
+   la revisión local de seguridad y addUser(). El núcleo determinista está en el
+   bloque PI (arriba). OCR con Tesseract.js cargado bajo demanda en un Web Worker.
+   ══════════════════════════════════════════════════════════════════════════ */
+var PLANO_MAX_MB=40, PLANO_MAX_DIM=2600;
+S.plano=null;
+
+function piEsc(v){return htmlEsc(v);}
+function piToast(m,e,d){toast(m,e,d);}
+
+/* Inyecta una sola vez los estilos del asistente. */
+function piInjectStyle(){
+  if(document.getElementById('pi-style'))return;
+  var st=document.createElement('style');st.id='pi-style';
+  st.textContent=[
+   '#pi-wiz{position:fixed;inset:0;background:rgba(4,10,24,.86);z-index:100000;display:none;align-items:stretch;justify-content:center;padding:0}',
+   '#pi-wiz.on{display:flex}',
+   '.pi-shell{background:#0b1c38;width:100%;max-width:1080px;margin:auto;height:100%;max-height:100vh;display:flex;flex-direction:column;border-left:1px solid #24406e;border-right:1px solid #24406e}',
+   '.pi-head{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #24406e;background:linear-gradient(135deg,#091428,#16335f)}',
+   '.pi-head b{font-size:15px;color:#f3e3a3}',
+   '.pi-steps{flex:1;display:flex;gap:4px;flex-wrap:wrap;font-size:10.5px;color:#8aa0bd}',
+   '.pi-steps span{padding:2px 7px;border-radius:11px;border:1px solid #2a456e;white-space:nowrap}',
+   '.pi-steps span.on{background:#2f5fa0;color:#fff;border-color:#4a7cc4}',
+   '.pi-steps span.done{color:#7fd6a6;border-color:#2f6b45}',
+   '.pi-x{background:#12294d;border:1px solid #2c4a7c;color:#c9d8ef;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:700}',
+   '.pi-body{flex:1;overflow:auto;padding:14px 16px;color:#dfe9f7;font-size:13px;line-height:1.5}',
+   '.pi-foot{display:flex;gap:8px;align-items:center;padding:10px 16px;border-top:1px solid #24406e;background:#0a1830}',
+   '.pi-foot .sp{flex:1}',
+   '.pi-btn{padding:8px 16px;border-radius:7px;border:1px solid #2c4a7c;cursor:pointer;font-weight:700;font-size:13px;background:#12294d;color:#dfe9f7}',
+   '.pi-btn.prim{background:#1c5e33;border-color:#2f9b57;color:#eafff0}',
+   '.pi-btn:disabled{opacity:.45;cursor:not-allowed}',
+   '.pi-canvas-wrap{position:relative;display:inline-block;max-width:100%;border:1px solid #24406e;background:#061024}',
+   '.pi-canvas-wrap canvas,.pi-canvas-wrap img{display:block;max-width:100%;height:auto}',
+   '.pi-sel{position:absolute;border:2px dashed #f3e3a3;background:rgba(243,227,163,.14);pointer-events:none}',
+   '.pi-note{background:rgba(47,95,160,.14);border:1px solid #2a456e;border-radius:6px;padding:8px 10px;margin:8px 0;font-size:12px}',
+   '.pi-warn{background:rgba(224,164,75,.12);border:1px solid #7a5a20;color:#ffd9a1}',
+   '.pi-err{background:rgba(224,85,85,.12);border:1px solid #7a2a2a;color:#ffc9c9}',
+   '.pi-ok{background:rgba(47,155,87,.14);border:1px solid #2f6b45;color:#bff0cf}',
+   '.pi-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}',
+   '.pi-table th,.pi-table td{border:1px solid #24406e;padding:3px 5px;text-align:center}',
+   '.pi-table th{background:#12294d;color:#bcd0ef;position:sticky;top:0}',
+   '.pi-table td[contenteditable]{background:#0c1f3d;cursor:text;min-width:70px}',
+   '.pi-table td.lowconf{background:#4a3a18}',
+   '.pi-table td.bad{background:#5a1f1f;color:#ffd6d6}',
+   '.pi-table tr.dup td{outline:1px solid #e0a44b}',
+   '.pi-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}',
+   '.pi-in{background:#0c1f3d;border:1px solid #2a456e;border-radius:5px;color:#eef3fb;font-size:13px;padding:5px 7px;outline:none}',
+   '.pi-chip{display:inline-block;padding:2px 8px;border-radius:11px;font-size:11px;border:1px solid #2a456e;margin:2px 3px 2px 0}',
+   '.pi-tool{background:#12294d;border:1px solid #2c4a7c;color:#dfe9f7;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:12px}',
+   '#pi-map{height:340px;border:1px solid #24406e;border-radius:6px;margin-top:8px}',
+   '.pi-prog{height:6px;background:#0c1f3d;border-radius:4px;overflow:hidden;flex:1;max-width:220px}',
+   '.pi-prog i{display:block;height:100%;width:0;background:#4a7cc4;transition:width .2s}'
+  ].join('\n');
+  document.head.appendChild(st);
+}
+
+/* Estado inicial del asistente. */
+function piNewState(){
+  return {file:null,name:'',kind:'',pdf:null,pages:1,pageNum:1,
+    baseCanvas:null,rot:0,crop:null,dispScale:1,
+    extractType:'coords',region:null,ocrText:'',rows:[],confRows:[],
+    crs:'EPSG:5367',crsInfo:null,polyBuilt:null,workRingM:null,srcRing:null,
+    adjust:{dx:0,dy:0,rot:0},adjHist:[],map:null,mapLayer:null,worker:null,
+    planoAreaHa:null,build:null,locMethod:'coords',anchor:null,gridPts:[],cancelOCR:false};
+}
+
+function openPlanoImport(){
+  piInjectStyle();
+  var fi=document.getElementById('pi-fi');
+  if(!fi){
+    fi=document.createElement('input');fi.type='file';fi.id='pi-fi';
+    fi.accept='.pdf,.png,.jpg,.jpeg,.tif,.tiff,application/pdf,image/png,image/jpeg,image/tiff';
+    fi.style.display='none';fi.addEventListener('change',function(e){var f=e.target.files&&e.target.files[0];e.target.value='';if(f)piOnFile(f);});
+    document.body.appendChild(fi);
+  }
+  fi.click();
+}
+
+async function piOnFile(file){
+  var mb=(file.size||0)/1048576;
+  if(mb>PLANO_MAX_MB){piToast('El archivo supera '+PLANO_MAX_MB+' MB. Reduzca la resolución del plano.',true,5000);return;}
+  var clase=isPlanPdf(file.name)?'pdf':'imagen';
+  var ok=await revisarArchivoAntesDeUsar(file,clase,file.name);
+  if(!ok)return;
+  var st=piNewState();
+  st.file=file;st.name=file.name;st.kind=clase;
+  S.plano=st;
+  try{
+    piShowWiz();
+    piGoStep('prepare');
+    await piLoadDoc();
+  }catch(e){piToast('No se pudo abrir el plano: '+e.message,true,6000);console.error(e);piCloseWiz();}
+}
+
+async function piLoadDoc(){
+  var st=S.plano;
+  if(st.kind==='pdf'){
+    if(!window.pdfjsLib)throw new Error('PDF.js no disponible');
+    if(pdfjsLib.GlobalWorkerOptions)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    st.pdf=await pdfjsLib.getDocument({data:await st.file.arrayBuffer(),isEvalSupported:false}).promise;
+    st.pages=st.pdf.numPages||1;
+  }else{st.pages=1;}
+  await piRenderPage(st.pageNum);
+  piRenderStep();
+}
+
+async function piRenderPage(n){
+  var st=S.plano;st.pageNum=n;
+  if(st.kind==='pdf'){
+    var page=await st.pdf.getPage(n);
+    var vp0=page.getViewport({scale:1});
+    var scale=Math.min(2.6,Math.max(1.4,PLANO_MAX_DIM/Math.max(vp0.width,vp0.height)));
+    var vp=page.getViewport({scale:scale});
+    var c=document.createElement('canvas');c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);
+    var ctx=c.getContext('2d',{willReadFrequently:true});
+    await page.render({canvasContext:ctx,viewport:vp}).promise;
+    st.baseCanvas=c;
+  }else{
+    var r=await renderRasterPlan(st.file);   // reutiliza el render de imagen/TIFF
+    st.baseCanvas=r.canvas;
+  }
+}
+
+/* Devuelve un canvas con la rotación actual aplicada (múltiplos de 90°). */
+function piRotatedCanvas(){
+  var st=S.plano, src=st.baseCanvas, rot=((st.rot%360)+360)%360;
+  if(rot===0)return src;
+  var swap=(rot===90||rot===270);
+  var c=document.createElement('canvas');
+  c.width=swap?src.height:src.width;c.height=swap?src.width:src.height;
+  var ctx=c.getContext('2d',{willReadFrequently:true});
+  ctx.save();ctx.translate(c.width/2,c.height/2);ctx.rotate(rot*Math.PI/180);
+  ctx.drawImage(src,-src.width/2,-src.height/2);ctx.restore();
+  return c;
+}
+
+/* Canvas del recorte activo (crop) sobre la imagen rotada. */
+function piWorkingCanvas(){
+  var st=S.plano, base=piRotatedCanvas();
+  if(!st.crop)return base;
+  var cr=st.crop, c=document.createElement('canvas');
+  c.width=Math.max(1,Math.round(cr.w));c.height=Math.max(1,Math.round(cr.h));
+  c.getContext('2d',{willReadFrequently:true}).drawImage(base,cr.x,cr.y,cr.w,cr.h,0,0,cr.w,cr.h);
+  return c;
+}
+
+/* ── modal shell ── */
+var PI_STEPS=[['prepare','Preparar'],['type','Tipo'],['region','Recuadro'],['ocr','OCR'],
+  ['table','Tabla'],['build','Polígono'],['locate','Ubicar'],['adjust','Ajustar'],['accept','Aceptar']];
+
+function piShowWiz(){
+  var w=document.getElementById('pi-wiz');
+  if(!w){
+    w=document.createElement('div');w.id='pi-wiz';
+    w.innerHTML='<div class="pi-shell">'+
+      '<div class="pi-head"><b>📐 Importar predio desde plano</b><div class="pi-steps" id="pi-steps"></div>'+
+      '<button class="pi-x" onclick="piCancel()">Cancelar</button></div>'+
+      '<div class="pi-body" id="pi-body"></div>'+
+      '<div class="pi-foot"><button class="pi-btn" id="pi-back" onclick="piBack()">‹ Atrás</button>'+
+      '<div class="pi-prog" id="pi-progwrap" style="display:none"><i id="pi-prog"></i></div>'+
+      '<span id="pi-foot-msg" style="font-size:12px;color:#9db4d6"></span>'+
+      '<div class="sp"></div>'+
+      '<button class="pi-btn prim" id="pi-next" onclick="piNext()">Continuar ›</button></div>'+
+      '</div>';
+    document.body.appendChild(w);
+  }
+  w.classList.add('on');
+}
+function piCloseWiz(){
+  var st=S.plano;
+  if(st){ piReleaseOCR(); if(st.map){try{st.map.remove();}catch(e){}st.map=null;} if(st.pdf){try{st.pdf.destroy();}catch(e){}st.pdf=null;} st.baseCanvas=null; }
+  var w=document.getElementById('pi-wiz');if(w)w.classList.remove('on');
+}
+function piCancel(){ if(confirm('¿Cancelar la importación del plano? Se perderá el trabajo del asistente.')){S.plano=null;piCloseWiz();} }
+
+var PI_CUR='prepare';
+function piGoStep(name){PI_CUR=name;piRenderStep();}
+function piStepIndex(n){for(var i=0;i<PI_STEPS.length;i++)if(PI_STEPS[i][0]===n)return i;return 0;}
+
+function piBack(){var i=piStepIndex(PI_CUR);if(i>0)piGoStep(PI_STEPS[i-1][0]);}
+function piNext(){
+  // Validaciones por paso antes de avanzar
+  var st=S.plano;if(!st)return;
+  if(PI_CUR==='table'){ if(!piCommitTable())return; }
+  if(PI_CUR==='build'){ if(!st.build){piToast('Genere primero el polígono.',true,3500);return;} }
+  var i=piStepIndex(PI_CUR);
+  if(i<PI_STEPS.length-1)piGoStep(PI_STEPS[i+1][0]);
+}
+
+function piRenderSteps(){
+  var cur=piStepIndex(PI_CUR);
+  document.getElementById('pi-steps').innerHTML=PI_STEPS.map(function(s,i){
+    var cls=i===cur?'on':(i<cur?'done':'');return '<span class="'+cls+'">'+(i+1)+'. '+s[1]+'</span>';
+  }).join('');
+}
+
+function piRenderStep(){
+  if(!document.getElementById('pi-wiz'))return;
+  piRenderSteps();
+  var body=document.getElementById('pi-body');
+  var back=document.getElementById('pi-back'), next=document.getElementById('pi-next');
+  back.disabled=piStepIndex(PI_CUR)===0;
+  next.style.display='';next.textContent='Continuar ›';
+  document.getElementById('pi-foot-msg').textContent='';
+  var fn={prepare:piRenderPrepare,type:piRenderType,region:piRenderRegion,ocr:piRenderOCR,
+    table:piRenderTable,build:piRenderBuild,locate:piRenderLocate,adjust:piRenderAdjust,accept:piRenderAccept}[PI_CUR];
+  if(fn)fn(body);
+}
+
+/* ── PASO: Preparar (página, rotación, recorte) ── */
+function piRenderPrepare(body){
+  var st=S.plano;
+  var pg=st.pages>1?'<div class="pi-row">Página <button class="pi-tool" onclick="piPage(-1)">‹</button> <b id="pi-pg">'+st.pageNum+'</b> / '+st.pages+' <button class="pi-tool" onclick="piPage(1)">›</button></div>':'';
+  body.innerHTML='<div class="pi-note">Elija la página (si el PDF tiene varias), rote si es necesario y, opcionalmente, arrastre para recortar la zona útil. El plano no se envía a ningún servicio.</div>'+
+    pg+
+    '<div class="pi-row"><button class="pi-tool" onclick="piRotate()">↻ Rotar 90°</button>'+
+    '<button class="pi-tool" onclick="piCropToggle()" id="pi-cropbtn">✂️ Recortar</button>'+
+    '<button class="pi-tool" onclick="piCropClear()">Quitar recorte</button>'+
+    '<span id="pi-crop-stat" style="font-size:12px;color:#9db4d6"></span></div>'+
+    '<div class="pi-canvas-wrap" id="pi-cw"></div>';
+  piMountPreview();
+}
+function piMountPreview(){
+  var st=S.plano, wrap=document.getElementById('pi-cw');if(!wrap)return;
+  var base=piRotatedCanvas();
+  var maxW=Math.min(940,wrap.parentElement.clientWidth-4);
+  var scale=Math.min(1,maxW/base.width);st.dispScale=scale;
+  var disp=document.createElement('canvas');disp.width=Math.round(base.width*scale);disp.height=Math.round(base.height*scale);
+  disp.getContext('2d').drawImage(base,0,0,disp.width,disp.height);
+  wrap.innerHTML='';wrap.appendChild(disp);
+  wrap.style.width=disp.width+'px';
+  if(st.crop){
+    var sel=document.createElement('div');sel.className='pi-sel';sel.id='pi-selbox';
+    sel.style.left=(st.crop.x*scale)+'px';sel.style.top=(st.crop.y*scale)+'px';
+    sel.style.width=(st.crop.w*scale)+'px';sel.style.height=(st.crop.h*scale)+'px';
+    wrap.appendChild(sel);
+  }
+  document.getElementById('pi-crop-stat').textContent=st.crop?('Recorte '+Math.round(st.crop.w)+'×'+Math.round(st.crop.h)+' px'):'';
+  wrap._piMode='crop';
+  piBindDrag(wrap,disp,function(rect){ st.crop={x:rect.x,y:rect.y,w:rect.w,h:rect.h}; piMountPreview(); });
+}
+function piPage(d){var st=S.plano;var n=Math.min(st.pages,Math.max(1,st.pageNum+d));if(n!==st.pageNum){st.crop=null;piRenderPageThen(n);}}
+async function piRenderPageThen(n){await piRenderPage(n);piMountPreview();var e=document.getElementById('pi-pg');if(e)e.textContent=n;}
+function piRotate(){var st=S.plano;st.rot=(st.rot+90)%360;st.crop=null;piMountPreview();}
+function piCropToggle(){piToast('Arrastre sobre la imagen para definir el recorte.',false,2500);}
+function piCropClear(){S.plano.crop=null;piMountPreview();}
+
+/* Arrastre de un rectángulo sobre un canvas mostrado; devuelve rect en coords fuente. */
+function piBindDrag(wrap,disp,onRect){
+  var st=S.plano, start=null;
+  function pos(ev){var r=disp.getBoundingClientRect();var cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-r.left;var cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-r.top;return {x:Math.max(0,Math.min(disp.width,cx)),y:Math.max(0,Math.min(disp.height,cy))};}
+  function down(ev){ev.preventDefault();start=pos(ev);var old=document.getElementById('pi-drawbox');if(old)old.remove();}
+  function move(ev){if(!start)return;var p=pos(ev);var box=document.getElementById('pi-drawbox');if(!box){box=document.createElement('div');box.className='pi-sel';box.id='pi-drawbox';wrap.appendChild(box);}box.style.left=Math.min(start.x,p.x)+'px';box.style.top=Math.min(start.y,p.y)+'px';box.style.width=Math.abs(p.x-start.x)+'px';box.style.height=Math.abs(p.y-start.y)+'px';}
+  function up(ev){if(!start)return;var p=pos(ev);var sc=st.dispScale||1;var rx=Math.min(start.x,p.x)/sc,ry=Math.min(start.y,p.y)/sc,rw=Math.abs(p.x-start.x)/sc,rh=Math.abs(p.y-start.y)/sc;start=null;if(rw>8&&rh>8)onRect({x:rx,y:ry,w:rw,h:rh});}
+  disp.onmousedown=down;disp.onmousemove=move;window.addEventListener('mouseup',up);
+  disp.ontouchstart=down;disp.ontouchmove=move;disp.ontouchend=up;
+}
+
+/* ── PASO: Tipo de extracción ── */
+function piRenderType(body){
+  var st=S.plano;
+  var opts=[['coords','Listado de coordenadas Este–Norte'],
+    ['rumbo','Derrotero de rumbo y distancia'],
+    ['azimut','Derrotero de azimut y distancia']];
+  body.innerHTML='<div class="pi-note">¿Cómo se describe el predio en el plano?</div>'+
+    opts.map(function(o){return '<label class="pi-row"><input type="radio" name="pi-type" value="'+o[0]+'" '+(st.extractType===o[0]?'checked':'')+' onchange="S.plano.extractType=this.value"> '+piEsc(o[1])+'</label>';}).join('')+
+    '<div class="pi-note pi-warn">La escritura manuscrita se trata como <b>transcripción asistida</b>: el OCR es una ayuda y usted confirma cada valor en la tabla.</div>';
+}
+
+/* ── PASO: Recuadro a leer ── */
+function piRenderRegion(body){
+  var st=S.plano;
+  body.innerHTML='<div class="pi-note">Arrastre para seleccionar únicamente el cuadro con '+(st.extractType==='coords'?'las coordenadas':'el derrotero')+'. Se procesará sólo ese recorte.</div>'+
+    '<div class="pi-row"><button class="pi-tool" onclick="piRegionAll()">Usar toda la imagen/recorte</button>'+
+    '<span id="pi-reg-stat" style="font-size:12px;color:#9db4d6"></span></div>'+
+    '<div class="pi-canvas-wrap" id="pi-cw"></div>';
+  piMountRegion();
+}
+function piMountRegion(){
+  var st=S.plano, wrap=document.getElementById('pi-cw');if(!wrap)return;
+  var base=piWorkingCanvas();
+  var maxW=Math.min(940,wrap.parentElement.clientWidth-4);
+  var scale=Math.min(1,maxW/base.width);st.dispScale=scale;
+  var disp=document.createElement('canvas');disp.width=Math.round(base.width*scale);disp.height=Math.round(base.height*scale);
+  disp.getContext('2d').drawImage(base,0,0,disp.width,disp.height);
+  wrap.innerHTML='';wrap.appendChild(disp);wrap.style.width=disp.width+'px';
+  if(st.region){var sel=document.createElement('div');sel.className='pi-sel';sel.style.left=(st.region.x*scale)+'px';sel.style.top=(st.region.y*scale)+'px';sel.style.width=(st.region.w*scale)+'px';sel.style.height=(st.region.h*scale)+'px';wrap.appendChild(sel);}
+  document.getElementById('pi-reg-stat').textContent=st.region?('Recuadro '+Math.round(st.region.w)+'×'+Math.round(st.region.h)+' px'):'Sin recuadro (se usará todo)';
+  piBindDrag(wrap,disp,function(rect){st.region={x:rect.x,y:rect.y,w:rect.w,h:rect.h};piMountRegion();});
+}
+function piRegionAll(){var b=piWorkingCanvas();S.plano.region={x:0,y:0,w:b.width,h:b.height};piMountRegion();}
+
+/* Canvas del recuadro a OCR, preprocesado (gris + contraste + binarización). */
+function piRegionCanvas(preprocess){
+  var st=S.plano, base=piWorkingCanvas();
+  var r=st.region||{x:0,y:0,w:base.width,h:base.height};
+  var up=Math.min(2,Math.max(1,1400/Math.max(r.w,r.h)));   // sobremuestreo suave
+  var c=document.createElement('canvas');c.width=Math.round(r.w*up);c.height=Math.round(r.h*up);
+  var ctx=c.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(base,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
+  if(preprocess){
+    var im=ctx.getImageData(0,0,c.width,c.height),d=im.data;
+    // gris + aumento de contraste + umbral Otsu simple
+    var hist=new Array(256).fill(0);
+    for(var i=0;i<d.length;i+=4){var g=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)|0;d[i]=d[i+1]=d[i+2]=g;hist[g]++;}
+    var total=c.width*c.height,sum=0;for(var k=0;k<256;k++)sum+=k*hist[k];
+    var sumB=0,wB=0,mx=0,thr=128;
+    for(var tt=0;tt<256;tt++){wB+=hist[tt];if(!wB)continue;var wF=total-wB;if(!wF)break;sumB+=tt*hist[tt];var mB=sumB/wB,mF=(sum-sumB)/wF,between=wB*wF*(mB-mF)*(mB-mF);if(between>mx){mx=between;thr=tt;}}
+    for(var j=0;j<d.length;j+=4){var v=d[j]>thr?255:0;d[j]=d[j+1]=d[j+2]=v;}
+    ctx.putImageData(im,0,0);
+  }
+  return c;
+}
+
+/* ── PASO: OCR ── */
+function piRenderOCR(body){
+  var st=S.plano;
+  body.innerHTML='<div class="pi-note">Ejecute el OCR sobre el recuadro, o transcriba a mano si el texto es manuscrito o de baja calidad.</div>'+
+    '<div class="pi-row">'+
+    '<button class="pi-btn prim" id="pi-ocr-run" onclick="piRunOCR()">🔎 Ejecutar OCR</button>'+
+    '<button class="pi-btn" onclick="piSkipOCR()">✍️ Transcribir a mano</button>'+
+    '<button class="pi-btn" id="pi-ocr-cancel" style="display:none" onclick="S.plano.cancelOCR=true">Detener</button></div>'+
+    '<div id="pi-ocr-msg" style="font-size:12px;color:#9db4d6;margin-top:6px"></div>'+
+    '<div class="pi-canvas-wrap" id="pi-ocr-prev" style="margin-top:8px;max-height:260px;overflow:auto"></div>';
+  var prev=document.getElementById('pi-ocr-prev');
+  var c=piRegionCanvas(true);var sc=Math.min(1,900/c.width);var d=document.createElement('canvas');d.width=c.width*sc;d.height=c.height*sc;d.getContext('2d').drawImage(c,0,0,d.width,d.height);prev.appendChild(d);
+  document.getElementById('pi-next').style.display='none';
+}
+function piSkipOCR(){var st=S.plano;st.ocrText='';st.rows=piEmptyRows(st.extractType);st.confRows=[];piGoStep('table');}
+function piEmptyRows(type){
+  var r=[];for(var i=0;i<3;i++)r.push(type==='coords'?{p:i+1,e:'',n:''}:{line:i+1,dir:'',dist:''});
+  return r;
+}
+
+async function piRunOCR(){
+  var st=S.plano;st.cancelOCR=false;
+  var runBtn=document.getElementById('pi-ocr-run'),cancelBtn=document.getElementById('pi-ocr-cancel'),msg=document.getElementById('pi-ocr-msg');
+  runBtn.disabled=true;cancelBtn.style.display='';
+  piProg(true,0);msg.textContent='Cargando motor OCR (una sola vez)…';
+  try{
+    await loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js','sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F');
+    if(!window.Tesseract)throw new Error('No se pudo cargar Tesseract.js');
+    var base='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/';
+    var worker=await Tesseract.createWorker('eng',1,{
+      workerPath:base+'worker.min.js',
+      corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core-simd.wasm.js',
+      langPath:'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0',
+      logger:function(m){if(m.status&&m.progress!=null){piProg(true,m.progress);msg.textContent=m.status+' '+Math.round(m.progress*100)+'%';}}
+    });
+    st.worker=worker;
+    await worker.setParameters({tessedit_char_whitelist:'0123456789.,°\'"NSEWO nsewo-+ '});
+    if(st.cancelOCR){piReleaseOCR();msg.textContent='OCR detenido.';piProg(false);runBtn.disabled=false;cancelBtn.style.display='none';return;}
+    var canvas=piRegionCanvas(true);
+    var res=await worker.recognize(canvas);
+    piReleaseOCR();
+    st.ocrText=res.data.text||'';
+    var conf=(res.data.words||[]).length?res.data.words:[];
+    st.parsed=piParseOCR(st.ocrText,st.extractType,res.data);
+    st.rows=st.parsed.rows;st.confRows=st.parsed.conf;
+    piProg(false);msg.textContent='OCR terminado. Revise y corrija en la tabla.';
+    piGoStep('table');
+  }catch(e){
+    piReleaseOCR();piProg(false);
+    msg.innerHTML='<span style="color:#ffc9c9">No se pudo ejecutar el OCR ('+piEsc(e.message)+'). Puede transcribir a mano.</span>';
+    runBtn.disabled=false;cancelBtn.style.display='none';
+    console.error(e);
+  }
+}
+function piReleaseOCR(){var st=S.plano;if(st&&st.worker){try{st.worker.terminate();}catch(e){}st.worker=null;}}
+function piProg(show,frac){var w=document.getElementById('pi-progwrap'),b=document.getElementById('pi-prog');if(!w)return;w.style.display=show?'block':'none';if(b)b.style.width=Math.round((frac||0)*100)+'%';}
+
+/* Convierte texto OCR en filas estructuradas por tipo. */
+function piParseOCR(text,type,data){
+  var lines=(text||'').split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean);
+  var rows=[],conf=[];
+  var wordsByLine={};
+  if(data&&data.lines){data.lines.forEach(function(l,i){wordsByLine[i]=(l.confidence!=null?l.confidence:100);});}
+  if(type==='coords'){
+    var p=0;
+    lines.forEach(function(ln,i){
+      var nums=ln.match(/-?\d[\d.,]*/g);
+      if(!nums)return;
+      // toma los dos últimos números como E,N (el primero suele ser el nº de punto)
+      var vals=nums.map(PI.parseNumber).filter(function(v){return isFinite(v);});
+      if(vals.length<2)return;
+      var e,n,pt;
+      if(vals.length>=3){pt=vals[0];e=vals[vals.length-2];n=vals[vals.length-1];}
+      else{pt=++p;e=vals[0];n=vals[1];}
+      rows.push({p:pt,e:e,n:n});
+      conf.push({p:100,e:wordsByLine[i]||80,n:wordsByLine[i]||80});
+    });
+  }else{
+    lines.forEach(function(ln,i){
+      var b=PI.parseBearing(ln);
+      var dm=ln.match(/(\d[\d.,]*)\s*(m|mts|metros)?\s*$/i);
+      var dist=dm?PI.parseNumber(dm[1]):NaN;
+      if(!b&&!isFinite(dist))return;
+      rows.push({line:rows.length+1,dir:b?b.raw:ln,dist:isFinite(dist)?dist:''});
+      conf.push({dir:wordsByLine[i]||70,dist:wordsByLine[i]||70});
+    });
+  }
+  if(!rows.length)rows=piEmptyRows(type);
+  return {rows:rows,conf:conf};
+}
+
+/* ── PASO: Tabla editable ── */
+function piRenderTable(body){
+  var st=S.plano;
+  var isC=st.extractType==='coords';
+  var head=isC?'<tr><th>Punto</th><th>Este / X</th><th>Norte / Y</th><th></th></tr>':
+    '<tr><th>Línea</th><th>'+(st.extractType==='rumbo'?'Rumbo':'Azimut')+'</th><th>Distancia</th><th></th></tr>';
+  body.innerHTML='<div class="pi-note">Revise y corrija cada celda. Las celdas resaltadas indican baja confianza o valores dudosos. Puede agregar o eliminar filas.</div>'+
+    '<div class="pi-row"><button class="pi-tool" onclick="piAddRow()">＋ Fila</button>'+
+    '<span id="pi-tbl-msg" style="font-size:12px"></span></div>'+
+    '<div style="max-height:52vh;overflow:auto"><table class="pi-table"><thead>'+head+'</thead><tbody id="pi-tbody"></tbody></table></div>';
+  piFillTable();
+}
+function piFillTable(){
+  var st=S.plano,isC=st.extractType==='coords',tb=document.getElementById('pi-tbody');if(!tb)return;
+  var flags=isC?PI.validateCoords(st.rows.map(function(r){return {e:PI.parseNumber(r.e),n:PI.parseNumber(r.n)};})):[];
+  tb.innerHTML=st.rows.map(function(r,i){
+    var cf=st.confRows[i]||{};
+    function cell(field,val,low){var cls=[];if(low!=null&&low<60)cls.push('lowconf');if(flags[i]&&(flags[i].missing&&(field==='e'||field==='n')))cls.push('bad');return '<td contenteditable class="'+cls.join(' ')+'" data-i="'+i+'" data-f="'+field+'" oninput="piCellEdit(this)">'+piEsc(val)+'</td>';}
+    if(isC){
+      var dup=flags[i]&&flags[i].duplicate?' class="dup"':'';
+      return '<tr'+dup+'>'+cell('p',r.p,100)+cell('e',r.e,cf.e)+cell('n',r.n,cf.n)+'<td><button class="pi-tool" onclick="piDelRow('+i+')">✕</button></td></tr>';
+    }
+    return '<tr>'+cell('line',r.line,100)+cell('dir',r.dir,cf.dir)+cell('dist',r.dist,cf.dist)+'<td><button class="pi-tool" onclick="piDelRow('+i+')">✕</button></td></tr>';
+  }).join('');
+  piTableMsg();
+}
+function piCellEdit(td){var st=S.plano;var i=+td.dataset.i,f=td.dataset.f;st.rows[i][f]=td.textContent.trim();piTableMsg();}
+function piAddRow(){var st=S.plano;st.rows.push(st.extractType==='coords'?{p:st.rows.length+1,e:'',n:''}:{line:st.rows.length+1,dir:'',dist:''});st.confRows.push({});piFillTable();}
+function piDelRow(i){var st=S.plano;st.rows.splice(i,1);st.confRows.splice(i,1);piFillTable();}
+function piTableMsg(){
+  var st=S.plano,isC=st.extractType==='coords',msg=document.getElementById('pi-tbl-msg');if(!msg)return;
+  var n=0,warns=[];
+  if(isC){
+    var pts=st.rows.map(function(r){return {e:PI.parseNumber(r.e),n:PI.parseNumber(r.n)};});
+    var valid=pts.filter(function(p){return isFinite(p.e)&&isFinite(p.n);});
+    n=valid.length;
+    var swap=valid.filter(function(p){return Math.abs(p.n)>800000&&Math.abs(p.e)>Math.abs(p.n);});
+    if(swap.length>valid.length/2&&valid.length)warns.push('posible intercambio Este/Norte');
+  }else{
+    n=st.rows.filter(function(r){return PI.parseBearing(r.dir)&&isFinite(PI.parseNumber(r.dist));}).length;
+  }
+  msg.innerHTML=n+' '+(isC?'vértices':'líneas')+' válidos'+(warns.length?' · <span style="color:#ffd9a1">⚠ '+warns.join(', ')+'</span>':'');
+}
+function piCommitTable(){
+  var st=S.plano,isC=st.extractType==='coords';
+  if(isC){
+    var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
+    if(pts.length<3){piToast('Se requieren al menos 3 vértices válidos.',true,3500);return false;}
+  }else{
+    var legs=st.rows.map(function(r){var b=PI.parseBearing(r.dir);return b?{azimuth:b.azimuth,distance:PI.parseNumber(r.dist)}:null;}).filter(function(l){return l&&isFinite(l.distance);});
+    if(legs.length<3){piToast('Se requieren al menos 3 líneas válidas (dirección y distancia).',true,4000);return false;}
+  }
+  return true;
+}
+
+/* ── PASO: Generar polígono (área, cierre, CRS) ── */
+function piRenderBuild(body){
+  var st=S.plano,isC=st.extractType==='coords';
+  var crsSel='';
+  if(isC){
+    var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
+    st.crsInfo=PI.classifyCRS(pts,st.ocrText);
+    if(!st.crs||st.crsInfo.needsUser)st.crs=st.crsInfo.best;
+    var opts=[['EPSG:4326','Geográficas WGS84 (lon/lat)'],['EPSG:5367','CRTM05 / EPSG:5367'],['EPSG:5456','Lambert Norte CR'],['EPSG:5457','Lambert Sur CR'],['EPSG:32616','UTM 16N'],['EPSG:32617','UTM 17N']];
+    crsSel='<div class="pi-row">Sistema de coordenadas: <select class="pi-in" id="pi-crs" onchange="S.plano.crs=this.value;piDoBuild()">'+
+      opts.map(function(o){return '<option value="'+o[0]+'"'+(st.crs===o[0]?' selected':'')+'>'+piEsc(o[1])+'</option>';}).join('')+'</select></div>'+
+      (st.crsInfo.needsUser?'<div class="pi-note pi-warn">CRS incierto: confirme el sistema de coordenadas del plano antes de continuar.</div>':'<div class="pi-note pi-ok">CRS sugerido con evidencia: '+piEsc(st.crsInfo.candidates[0].label)+'</div>');
+  }
+  body.innerHTML=(isC?'':'<div class="pi-note">El derrotero se construye desde un origen local (0,0). La ubicación real se define en el paso siguiente.</div>')+
+    crsSel+
+    '<div class="pi-row">Área escrita en el plano (ha, opcional): <input class="pi-in" id="pi-plarea" style="width:120px" placeholder="7,59" value="'+(st.planoAreaHa!=null?st.planoAreaHa:'')+'" oninput="S.plano.planoAreaHa=PI.parseNumber(this.value);piBuildStats()"></div>'+
+    '<button class="pi-btn prim" onclick="piDoBuild()">📐 Generar / recalcular polígono</button>'+
+    '<div id="pi-build-out" style="margin-top:10px"></div>';
+  piDoBuild();
+}
+function piDoBuild(){
+  var st=S.plano,isC=st.extractType==='coords';
+  try{
+    var ringM, build;
+    if(isC){
+      var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
+      var b=PI.buildFromCoords(pts);st.srcRing=b.vertices.slice();
+      // a metros CRTM05 para el marco de trabajo
+      if(st.crs==='EPSG:5367')ringM=b.vertices.map(function(p){return [p[0],p[1]];});
+      else if(st.crs==='EPSG:4326')ringM=b.vertices.map(function(p){return proj4('EPSG:4326','EPSG:5367',[p[0],p[1]]);});
+      else ringM=b.vertices.map(function(p){return proj4(st.crs,'EPSG:5367',[p[0],p[1]]);});
+      build={vertices:b.vertices,area:b.area,perimeter:b.perimeter,closureAbs:0,relClosure:Infinity,fromCoords:true};
+    }else{
+      var legs=st.rows.map(function(r){var bb=PI.parseBearing(r.dir);return bb?{azimuth:bb.azimuth,distance:PI.parseNumber(r.dist)}:null;}).filter(function(l){return l&&isFinite(l.distance);});
+      var tr=PI.buildTraverse(legs,[0,0]);st.srcRing=tr.vertices.slice();
+      ringM=tr.vertices.map(function(p){return [p[0],p[1]];});   // metros locales
+      build=tr;build.fromCoords=false;
+    }
+    st.workRingM=ringM;st.build=build;st.adjust={dx:0,dy:0,rot:0};st.adjHist=[];
+    piBuildStats();
+  }catch(e){document.getElementById('pi-build-out').innerHTML='<div class="pi-note pi-err">No se pudo construir el polígono: '+piEsc(e.message)+'</div>';console.error(e);}
+}
+function piBuildStats(){
+  var st=S.plano,b=st.build;if(!b){return;}
+  var out=document.getElementById('pi-build-out');if(!out)return;
+  var areaHaCalc=PI.shoelaceArea(st.workRingM)/10000;
+  var per=PI.perimeter(st.workRingM);
+  var rel=b.fromCoords?'—':('1:'+(isFinite(b.relClosure)?Math.round(b.relClosure):'∞'));
+  var diff=(st.planoAreaHa!=null&&isFinite(st.planoAreaHa))?(areaHaCalc-st.planoAreaHa):null;
+  out.innerHTML='<table class="pi-table"><tbody>'+
+    '<tr><th>Vértices</th><td>'+b.vertices.length+'</td></tr>'+
+    '<tr><th>Área calculada</th><td>'+areaHaCalc.toFixed(4)+' ha ('+(areaHaCalc*10000).toFixed(1)+' m²)</td></tr>'+
+    '<tr><th>Perímetro</th><td>'+per.toFixed(2)+' m</td></tr>'+
+    '<tr><th>Error de cierre</th><td>'+(b.fromCoords?'polígono cerrado por coordenadas':b.closureAbs.toFixed(3)+' m · relativo '+rel)+'</td></tr>'+
+    (diff!=null?'<tr><th>Δ vs área del plano</th><td>'+(diff>=0?'+':'')+diff.toFixed(4)+' ha</td></tr>':'')+
+    '</tbody></table>'+
+    (!b.fromCoords&&b.closureAbs>Math.max(0.5,per*0.01)?'<div class="pi-note pi-warn">El error de cierre supera 1:100. Revise distancias y rumbos (no se ajusta automáticamente).</div>':'');
+}
+
+/* ── PASO: Ubicar ── */
+function piRenderLocate(body){
+  var st=S.plano,isC=st.extractType==='coords';
+  var absOk=isC&&st.crs!=='__local';
+  st.locMethod=absOk?'coords':'amarre';
+  body.innerHTML='<div class="pi-note">Defina dónde se ubica el predio. La colocación es aproximada y se afina en el paso de ajuste.</div>'+
+    '<label class="pi-row"><input type="radio" name="pi-loc" value="coords" '+(absOk?'checked':'disabled')+' onchange="piSetLoc(this.value)"> Coordenadas absolutas (reproyectar directamente)'+(absOk?'':' — requiere listado de coordenadas con CRS')+'</label>'+
+    '<label class="pi-row"><input type="radio" name="pi-loc" value="amarre" '+(absOk?'':'checked')+' onchange="piSetLoc(this.value)"> Punto de amarre (un vértice con coordenada conocida)</label>'+
+    '<label class="pi-row"><input type="radio" name="pi-loc" value="grid" onchange="piSetLoc(this.value)"> Ubicación aproximada por minimapa / cuadrícula</label>'+
+    '<div id="pi-loc-panel" style="margin-top:8px"></div>';
+  piSetLoc(st.locMethod);
+}
+function piSetLoc(m){
+  var st=S.plano;st.locMethod=m;var p=document.getElementById('pi-loc-panel');if(!p)return;
+  if(m==='coords'){
+    p.innerHTML='<div class="pi-note pi-ok">Se reproyectará el listado de coordenadas ('+piEsc(st.crs)+') directamente a la ubicación real.</div>';
+  }else if(m==='amarre'){
+    var vi=st.srcRing.map(function(_,i){return '<option value="'+i+'">Vértice '+(i+1)+'</option>';}).join('');
+    p.innerHTML='<div class="pi-note">Indique un vértice del predio y su coordenada absoluta conocida (del plano o de un mojón).</div>'+
+      '<div class="pi-row">Vértice: <select class="pi-in" id="pi-am-v">'+vi+'</select>'+
+      ' CRS: <select class="pi-in" id="pi-am-crs"><option value="EPSG:5367">CRTM05</option><option value="EPSG:5456">Lambert Norte</option><option value="EPSG:5457">Lambert Sur</option><option value="EPSG:32616">UTM 16N</option><option value="EPSG:32617">UTM 17N</option><option value="EPSG:4326">Geográficas</option></select></div>'+
+      '<div class="pi-row">Este/X: <input class="pi-in" id="pi-am-e" style="width:130px"> Norte/Y: <input class="pi-in" id="pi-am-n" style="width:130px"> <button class="pi-tool" onclick="piApplyAmarre()">Anclar</button></div>'+
+      '<div id="pi-am-out" style="font-size:12px;color:#9db4d6"></div>';
+  }else{
+    p.innerHTML='<div class="pi-note">Marque al menos dos intersecciones de la cuadrícula sobre el plano e introduzca sus coordenadas; se estimará una ubicación aproximada del predio.</div>'+
+      '<div class="pi-row"><button class="pi-tool" onclick="piGridAdd()">＋ Marcar intersección</button> <span id="pi-grid-stat">0 puntos</span></div>'+
+      '<div id="pi-grid-list"></div>'+
+      '<div class="pi-canvas-wrap" id="pi-cw" style="max-height:320px;overflow:auto"></div>'+
+      '<div class="pi-note pi-warn" style="margin-top:8px">Ubicación aproximada derivada del recuadro cartográfico.</div>';
+    piMountGrid();
+  }
+}
+function piApplyAmarre(){
+  var st=S.plano;
+  var vi=+document.getElementById('pi-am-v').value;
+  var crs=document.getElementById('pi-am-crs').value;
+  var e=PI.parseNumber(document.getElementById('pi-am-e').value), n=PI.parseNumber(document.getElementById('pi-am-n').value);
+  if(!isFinite(e)||!isFinite(n)){piToast('Introduzca coordenadas válidas.',true,3000);return;}
+  var tgt=crs==='EPSG:5367'?[e,n]:proj4(crs,'EPSG:5367',[e,n]);
+  var v=st.workRingM[vi];
+  st.anchor={dx:tgt[0]-v[0],dy:tgt[1]-v[1]};
+  st.workRingM=st.workRingM.map(function(p){return [p[0]+st.anchor.dx,p[1]+st.anchor.dy];});
+  document.getElementById('pi-am-out').textContent='Predio anclado. Afine en el paso de ajuste.';
+  piToast('Predio anclado por punto de amarre.',false,2500);
+}
+function piMountGrid(){
+  var st=S.plano,wrap=document.getElementById('pi-cw');if(!wrap)return;
+  var base=piWorkingCanvas();var maxW=Math.min(900,wrap.parentElement.clientWidth-4);var sc=Math.min(1,maxW/base.width);st.dispScale=sc;
+  var disp=document.createElement('canvas');disp.width=Math.round(base.width*sc);disp.height=Math.round(base.height*sc);disp.getContext('2d').drawImage(base,0,0,disp.width,disp.height);
+  wrap.innerHTML='';wrap.appendChild(disp);wrap.style.width=disp.width+'px';
+  disp.onclick=function(ev){var r=disp.getBoundingClientRect();var x=(ev.clientX-r.left)/sc,y=(ev.clientY-r.top)/sc;st._gridPend=[x,y];piToast('Introduzca la coordenada de esa intersección.',false,2000);piGridPrompt(x,y);};
+}
+function piGridAdd(){piToast('Haga clic en una intersección de la cuadrícula del plano.',false,2500);}
+function piGridPrompt(x,y){
+  var st=S.plano;
+  var e=prompt('Este/X (CRTM05) de la intersección marcada:');if(e==null)return;
+  var n=prompt('Norte/Y (CRTM05) de la intersección marcada:');if(n==null)return;
+  var ev=PI.parseNumber(e),nv=PI.parseNumber(n);if(!isFinite(ev)||!isFinite(nv)){piToast('Coordenadas inválidas.',true,2500);return;}
+  st.gridPts.push({px:x,py:y,e:ev,n:nv});piGridRefresh();
+}
+function piGridRefresh(){
+  var st=S.plano;var stat=document.getElementById('pi-grid-stat');if(stat)stat.textContent=st.gridPts.length+' puntos';
+  var list=document.getElementById('pi-grid-list');if(list)list.innerHTML=st.gridPts.map(function(g,i){return '<div class="pi-chip">#'+(i+1)+' px('+Math.round(g.px)+','+Math.round(g.py)+') → E'+g.e+' N'+g.n+' <a href="#" onclick="S.plano.gridPts.splice('+i+',1);piGridRefresh();return false">✕</a></div>';}).join('');
+  if(st.gridPts.length>=2){
+    // escala px→m por regresión simple sobre distancias
+    var g=st.gridPts, sMx=0,sPx=0,cnt=0;
+    for(var i=0;i<g.length;i++)for(var j=i+1;j<g.length;j++){var dm=Math.hypot(g[i].e-g[j].e,g[i].n-g[j].n);var dp=Math.hypot(g[i].px-g[j].px,g[i].py-g[j].py);if(dp>1){sMx+=dm;sPx+=dp;cnt++;}}
+    var mPerPx=cnt?sMx/sPx:1;
+    // ancla: usa el primer punto para fijar E,N del origen del plano
+    st._gridAnchor={mPerPx:mPerPx,ref:g[0]};
+    // coloca el centroide del predio en la coordenada media de la cuadrícula
+    var midE=g.reduce(function(a,b){return a+b.e;},0)/g.length, midN=g.reduce(function(a,b){return a+b.n;},0)/g.length;
+    var cen=PI.centroid(st.workRingM);
+    st.workRingM=st.workRingM.map(function(p){return [p[0]-cen[0]+midE,p[1]-cen[1]+midN];});
+    var out=document.getElementById('pi-grid-list');
+    if(out)out.innerHTML+='<div class="pi-note pi-ok" style="margin-top:6px">Ubicación aproximada estimada ('+mPerPx.toFixed(2)+' m/px). Afine en el ajuste.</div>';
+  }
+}
+
+/* ── PASO: Ajuste final (traslación / rotación sobre Leaflet) ── */
+function piRenderAdjust(body){
+  var st=S.plano;
+  body.innerHTML='<div class="pi-note">Mueva y rote el predio como bloque rígido. No se escala ni se editan vértices (eso alteraría el derrotero).</div>'+
+    '<div class="pi-row">Desplazar Este (m): <input class="pi-in" id="pi-dx" style="width:100px" value="0" oninput="piAdjLive()"> Norte (m): <input class="pi-in" id="pi-dy" style="width:100px" value="0" oninput="piAdjLive()"></div>'+
+    '<div class="pi-row">Rotación (°): <input type="range" id="pi-rot" min="-180" max="180" step="0.5" value="'+st.adjust.rot+'" oninput="document.getElementById(\'pi-rotv\').textContent=this.value;piAdjLive()"> <b id="pi-rotv">'+st.adjust.rot+'</b></div>'+
+    '<div class="pi-row"><button class="pi-tool" onclick="piNudge(-5,0)">← 5m</button><button class="pi-tool" onclick="piNudge(5,0)">→ 5m</button><button class="pi-tool" onclick="piNudge(0,5)">↑ 5m</button><button class="pi-tool" onclick="piNudge(0,-5)">↓ 5m</button>'+
+    '<button class="pi-tool" onclick="piAdjUndo()">↶ Deshacer</button><button class="pi-tool" onclick="piAdjReset()">Restablecer</button></div>'+
+    '<div id="pi-map"></div><div id="pi-adj-stat" style="font-size:12px;color:#9db4d6;margin-top:6px"></div>';
+  setTimeout(piMountMap,60);
+}
+function piCurrentLatLng(){
+  var st=S.plano;
+  var ring=PI.transform(st.workRingM,st.adjust.dx,st.adjust.dy,st.adjust.rot);
+  return ring.map(function(p){return proj4('EPSG:5367','EPSG:4326',[p[0],p[1]]);}); // [lng,lat]
+}
+function piMountMap(){
+  var st=S.plano,el=document.getElementById('pi-map');if(!el)return;
+  if(st.map){try{st.map.remove();}catch(e){}}
+  st.map=L.map(el,{zoomControl:true});
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,attribution:'Esri'}).addTo(st.map);
+  piDrawAdjust(true);
+}
+function piDrawAdjust(fit){
+  var st=S.plano;if(!st.map)return;
+  var ll=piCurrentLatLng();
+  var latlngs=ll.map(function(p){return [p[1],p[0]];});
+  if(st.mapLayer)st.map.removeLayer(st.mapLayer);
+  st.mapLayer=L.polygon(latlngs,{color:'#111',weight:4,fillColor:'#fff06a',fillOpacity:0.18}).addTo(st.map);
+  L.polygon(latlngs,{color:'#fff06a',weight:2,dashArray:'8 4',fill:false}).addTo(st.mapLayer);
+  if(fit)st.map.fitBounds(st.mapLayer.getBounds(),{padding:[24,24]});
+  var haNow=PI.shoelaceArea(PII_ring())/10000;
+  var stt=document.getElementById('pi-adj-stat');if(stt)stt.textContent='Área (constante): '+haNow.toFixed(4)+' ha · desplazamiento E '+st.adjust.dx.toFixed(1)+' m, N '+st.adjust.dy.toFixed(1)+' m, rotación '+st.adjust.rot+'°';
+}
+function PII_ring(){var st=S.plano;return PI.transform(st.workRingM,st.adjust.dx,st.adjust.dy,st.adjust.rot);}
+function piAdjLive(){
+  var st=S.plano;
+  var dx=PI.parseNumber(document.getElementById('pi-dx').value)||0;
+  var dy=PI.parseNumber(document.getElementById('pi-dy').value)||0;
+  var rot=PI.parseNumber(document.getElementById('pi-rot').value)||0;
+  st.adjHist.push({dx:st.adjust.dx,dy:st.adjust.dy,rot:st.adjust.rot});
+  st.adjust={dx:dx,dy:dy,rot:rot};piDrawAdjust(false);
+}
+function piNudge(dx,dy){var st=S.plano;st.adjHist.push(Object.assign({},st.adjust));st.adjust.dx+=dx;st.adjust.dy+=dy;document.getElementById('pi-dx').value=st.adjust.dx.toFixed(1);document.getElementById('pi-dy').value=st.adjust.dy.toFixed(1);piDrawAdjust(false);}
+function piAdjUndo(){var st=S.plano;if(st.adjHist.length){st.adjust=st.adjHist.pop();document.getElementById('pi-dx').value=st.adjust.dx.toFixed(1);document.getElementById('pi-dy').value=st.adjust.dy.toFixed(1);document.getElementById('pi-rot').value=st.adjust.rot;document.getElementById('pi-rotv').textContent=st.adjust.rot;piDrawAdjust(false);}}
+function piAdjReset(){var st=S.plano;st.adjHist.push(Object.assign({},st.adjust));st.adjust={dx:0,dy:0,rot:0};document.getElementById('pi-dx').value='0';document.getElementById('pi-dy').value='0';document.getElementById('pi-rot').value=0;document.getElementById('pi-rotv').textContent='0';piDrawAdjust(true);}
+
+/* ── PASO: Aceptar → addUser() ── */
+function piRenderAccept(body){
+  var st=S.plano;
+  var ll=piCurrentLatLng();var haNow=PI.shoelaceArea(PII_ring())/10000;
+  body.innerHTML='<div class="pi-note pi-ok">Al aceptar, el polígono se incorpora como <b>polígono de análisis</b> y podrá continuar con todos los módulos (ASP, PNE, cobertura, terrenos, agua) e informe Word.</div>'+
+    '<table class="pi-table"><tbody>'+
+    '<tr><th>Archivo fuente</th><td>'+piEsc(st.name)+'</td></tr>'+
+    '<tr><th>Tipo de extracción</th><td>'+piEsc(st.extractType)+'</td></tr>'+
+    '<tr><th>CRS original</th><td>'+piEsc(st.extractType==='coords'?st.crs:'derrotero local')+'</td></tr>'+
+    '<tr><th>Área</th><td>'+haNow.toFixed(4)+' ha</td></tr>'+
+    '<tr><th>Método de ubicación</th><td>'+piEsc(st.locMethod)+'</td></tr>'+
+    '<tr><th>Ajuste aplicado</th><td>E '+st.adjust.dx.toFixed(1)+' m · N '+st.adjust.dy.toFixed(1)+' m · rot '+st.adjust.rot+'°</td></tr>'+
+    '</tbody></table>'+
+    '<div class="pi-note pi-warn">Geometría derivada de plano: verifíquela contra la cartografía oficial antes de emitir criterio.</div>';
+  var next=document.getElementById('pi-next');next.textContent='✅ Aceptar como polígono de análisis';next.onclick=piAccept;
+}
+function piBuildProvenance(){
+  var st=S.plano,b=st.build;
+  var haNow=PI.shoelaceArea(PII_ring())/10000;
+  return {
+    origen:'plano',
+    archivoFuente:st.name,
+    tipoExtraccion:st.extractType,
+    crsOriginal:st.extractType==='coords'?st.crs:'derrotero-local',
+    datosTranscritos:st.rows,
+    areaHa:+haNow.toFixed(4),
+    perimetroM:+PI.perimeter(st.workRingM).toFixed(2),
+    cierreM:b&&!b.fromCoords?+b.closureAbs.toFixed(3):0,
+    cierreRelativo:b&&!b.fromCoords&&isFinite(b.relClosure)?('1:'+Math.round(b.relClosure)):null,
+    areaPlanoHa:st.planoAreaHa!=null&&isFinite(st.planoAreaHa)?st.planoAreaHa:null,
+    metodoUbicacion:st.locMethod,
+    traslacionEsteM:+st.adjust.dx.toFixed(2),
+    traslacionNorteM:+st.adjust.dy.toFixed(2),
+    rotacionGrados:st.adjust.rot,
+    confianza:st.crsInfo?st.crsInfo.confidence:null,
+    geometriaDerivadaDePlano:true,
+    generado:new Date().toISOString(),
+    version:APP_VERSION
+  };
+}
+function piAccept(){
+  var st=S.plano;
+  try{
+    var ll=piCurrentLatLng();
+    var ring=ll.map(function(p){return [p[0],p[1]];});
+    ring.push([ring[0][0],ring[0][1]]);   // cierra el anillo GeoJSON
+    var prov=piBuildProvenance();
+    var fc={type:'FeatureCollection',features:[{type:'Feature',properties:prov,geometry:{type:'Polygon',coordinates:[ring]}}]};
+    piReleaseOCR();if(st.map){try{st.map.remove();}catch(e){}st.map=null;}
+    S.plano=null;piCloseWiz();
+    switchTab('carga');
+    addUser(fc,'Plano: '+prov.archivoFuente);
+    piToast('✅ Predio importado del plano ('+prov.areaHa.toFixed(2)+' ha). Puede ejecutar los análisis.',false,5000);
+  }catch(e){piToast('No se pudo incorporar el polígono: '+e.message,true,6000);console.error(e);}
 }
 
 /* ── BOOT ── */

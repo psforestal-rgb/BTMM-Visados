@@ -87,6 +87,26 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   plano/vector, con ajuste al vértice vectorial más cercano y transformación afín
   a partir de tres o más pares. Si el modo automático falla, conserva el plano y
   activa esta ruta manual.
+- Módulo **Importar predio desde plano**: asistente que deriva el polígono del
+  predio a partir de un plano (PDF/TIF/PNG/JPG) por **listado de coordenadas
+  Este–Norte**, **derrotero de rumbo y distancia** o **azimut y distancia**. El
+  plano pasa por la revisión local de seguridad; PDF.js lo convierte en imagen y
+  el usuario elige página, rota, recorta y selecciona el recuadro a leer. El
+  **OCR es local y bajo demanda** (Tesseract.js en un Web Worker; sin servicios
+  externos de OCR) y siempre desemboca en una **tabla editable con confirmación
+  humana** (la escritura manuscrita se trata como transcripción asistida). Detecta
+  CRS solo con evidencia (CRTM05/EPSG:5367, Lambert Norte/Sur, UTM 16/17N o
+  geográficas) y **exige selección del usuario si es incierto**. Calcula área,
+  perímetro y **error de cierre absoluto y relativo** (nunca ajusta el cierre ni
+  las distancias en silencio) y la diferencia frente al área escrita en el plano.
+  La ubicación es por coordenadas absolutas, punto de amarre o cuadrícula del
+  minimapa («ubicación aproximada derivada del recuadro cartográfico»), con
+  **ajuste final rígido** (traslación Este/Norte y rotación, sin escalar ni mover
+  vértices, con deshacer/restablecer) sobre Leaflet. Al aceptar, el resultado se
+  incorpora vía `addUser()` y continúa por el flujo normal de análisis e informe.
+  El GeoJSON conserva la procedencia (archivo fuente, tipo de extracción, CRS
+  original, datos transcritos, área y cierre, método de ubicación, traslación y
+  rotación, confianza e indicación «geometría derivada de plano»).
 - Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
 - Exportación a documento **Word** (.docx) sobre el **membrete institucional
@@ -169,6 +189,8 @@ Fuentes de información por capa (información actualizada al **2026-06-25**):
 - **Fincas del Estado (ACC):** capa proporcionada por el Área de Conservación
   Central (ACC).
 - **Imágenes aéreas recientes:** Esri World Imagery. Ortofotos: IGN / SNIT — Costa Rica.
-- **Bibliotecas:** Leaflet, Turf.js, proj4js, shpjs, sql.js, pako, JSZip, togeojson.
+- **Bibliotecas:** Leaflet, Turf.js, proj4js, shpjs, sql.js, pako, JSZip,
+  togeojson, PDF.js, UTIF y Tesseract.js (OCR local, carga diferida solo al abrir
+  el asistente «Importar predio desde plano»).
 
 SINAC — Área de Conservación Central — Bloque Tapantí Macizo de la Muerte.
