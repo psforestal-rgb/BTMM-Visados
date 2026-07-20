@@ -20,6 +20,17 @@ jobs:
       - name: Verificar consistencia (versiones, SRI, CSP, activos)
         run: python3 scripts/check_consistency.py
 
+  nucleo-plano:
+    name: Núcleo «Importar predio desde plano» (sin red)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+      - name: Pruebas del núcleo determinista (parsers, geometría, CRS, área CRTM05)
+        run: node scripts/plano_import.test.mjs
+
   smoke:
     name: Smoke test del visor (Chromium, CDN real)
     runs-on: ubuntu-latest

@@ -61,6 +61,28 @@ t('512345.67 (punto decimal)', () => assert(near(PI.parseNumber('512345.67'), 51
 t('512.345,67 (miles . / decimal ,)', () => assert(near(PI.parseNumber('512.345,67'), 512345.67)));
 t('1,234.56 (miles , / decimal .)', () => assert(near(PI.parseNumber('1,234.56'), 1234.56)));
 
+console.log('1b) Casos adversarios de parser (endurecidos)');
+t('15.030 → 15.03 (no 15030)', () => assert(near(PI.parseNumber('15.030'), 15.03)));
+t('15,030 → 15.03 (no 15030)', () => assert(near(PI.parseNumber('15,030'), 15.03)));
+t('N 120 E → inválido (null)', () => assert(PI.parseBearing('N 120 E') === null));
+t('10° 75\' → NaN (minutos ≥ 60)', () => assert(Number.isNaN(PI.parseDMS('10° 75\''))));
+t('N 10° 75\' W → null (rumbo con minutos inválidos)', () => assert(PI.parseBearing('N 10° 75\' W') === null));
+t('azimut 400 fuera de rango → null', () => assert(PI.parseBearing('400') === null));
+t('intercambio E/N detectado (E≈1e6 > N)', () => assert(PI.likelySwappedEN([[1050000, 512000], [1050100, 512100]]) === true));
+t('orden correcto no marca intercambio', () => assert(PI.likelySwappedEN([[512000, 1050000], [512100, 1050100]]) === false));
+
+console.log('1c) Similitud desde pares (georreferencia de cuadrícula)');
+t('2 pares: pixel→mundo exacto, escala 1', () => {
+  const T = PI.similarityFromPairs([{ src: [0, 0], dst: [500000, 1000000] }, { src: [100, 0], dst: [500100, 1000000] }]);
+  const w = PI.applySimilarity(T, [50, 0]);
+  assert(near(w[0], 500050) && near(w[1], 1000000), 'w=' + w);
+  assert(near(T.scale, 1));
+});
+t('similitud con eje Y de imagen invertido', () => {
+  const T = PI.similarityFromPairs([{ src: [0, 0], dst: [0, 100] }, { src: [0, 100], dst: [0, 0] }]);
+  assert(near(PI.applySimilarity(T, [0, 50])[1], 50));
+});
+
 console.log('2) Grados/minutos/segundos');
 t('14° 00\' 30" = 14.008333', () => assert(near(PI.parseDMS('14° 00\' 30"'), 14 + 30 / 3600, 1e-5)));
 t('14 30 00 = 14.5', () => assert(near(PI.parseDMS('14 30 00'), 14.5)));

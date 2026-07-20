@@ -766,7 +766,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-07-20-importar-plano-v39';
+const APP_VERSION='2026-07-20-importar-plano-v40';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6012,12 +6012,11 @@ PI.parseNumber=function(v){
     out=s.split(tho).join('').replace(dec,'.');
   }else if(hasC||hasD){
     var sep=hasC?',':'.';
-    var pura=new RegExp('^\\d{1,3}(\\'+sep+'\\d{3})+$');
-    if(pura.test(s)){ out=s.split(sep).join(''); }
-    else {
-      var parts=s.split(sep);
-      out=parts.slice(0,-1).join('')+'.'+parts.slice(-1); // último separador = decimal
-    }
+    var count=s.split(sep).length-1;
+    // Agrupación de miles SOLO con ≥2 separadores del mismo tipo (1.234.567);
+    // un separador único se trata como decimal (evita leer 15.030 como 15030).
+    if(count>=2 && new RegExp('^\\d{1,3}(\\'+sep+'\\d{3})+$').test(s)){ out=s.split(sep).join(''); }
+    else { var parts=s.split(sep); out=parts.slice(0,-1).join('')+'.'+parts.slice(-1); }
   }else out=s;
   var n=parseFloat(out);
   return isFinite(n)?(neg?-n:n):NaN;
@@ -6032,6 +6031,7 @@ PI.parseDMS=function(v){
   var m=s.match(/\d+(?:[.,]\d+)?/g);
   if(!m||!m.length)return NaN;
   var d=PI.parseNumber(m[0])||0, mi=m[1]?(PI.parseNumber(m[1])||0):0, se=m[2]?(PI.parseNumber(m[2])||0):0;
+  if(mi<0||mi>=60||se<0||se>=60)return NaN;   // minutos/segundos inválidos (p.ej. 10° 75')
   return d + mi/60 + se/3600;
 };
 
@@ -6046,7 +6046,7 @@ PI.parseBearing=function(v){
   if(q){
     var ns=q[1], ew=(q[3]==='O')?'W':q[3];
     var ang=PI.parseDMS(q[2]);
-    if(!isFinite(ang))return null;
+    if(!isFinite(ang)||ang<0||ang>90)return null;   // un rumbo de cuadrante ∈ [0,90] (rechaza N 120 E)
     var az;
     if(ns==='N'&&ew==='E')az=ang;
     else if(ns==='S'&&ew==='E')az=180-ang;
@@ -6056,8 +6056,8 @@ PI.parseBearing=function(v){
     return {azimuth:az,kind:'rumbo',ns:ns,ew:ew,angle:ang,raw:s};
   }
   var a=PI.parseDMS(up.replace(/[NSEWOº°'"´’″]/g,' '));
-  if(isFinite(a)){ return {azimuth:((a%360)+360)%360,kind:'azimut',raw:s}; }
-  return null;
+  if(isFinite(a)&&a>=0&&a<=360){ return {azimuth:(a%360),kind:'azimut',raw:s}; }
+  return null;   // fuera de [0,360] o inválido
 };
 
 PI.centroid=function(ring){
@@ -6191,15 +6191,38 @@ PI.validateCoords=function(rows){
     if(seen[key]!=null){flags[i].duplicate=true;flags[seen[key]].duplicate=true;}
     else seen[key]=i;
   }
-  // Detección de intercambio E/N: en CR el Norte (Y) suele ser > Este (X) en
-  // CRTM05/UTM (Y≈10⁶ > X). Si la mayoría tiene Y<X de forma marcada, avisar.
-  var proj=rows.filter(function(r){return isFinite(r.e)&&isFinite(r.n)&&(Math.abs(r.e)>1000||Math.abs(r.n)>1000);});
-  if(proj.length){
-    var swapped=proj.filter(function(r){return Math.abs(r.n)>800000 && Math.abs(r.e)>800000 && Math.abs(r.e)>Math.abs(r.n);});
-    // heurística suave: se marca a nivel de tabla, no por fila
-  }
   return flags;
 };
+
+/* Indica un probable intercambio Este/Norte. En CR proyectado (CRTM05/UTM) el
+   Norte (Y) supera al Este (X) y ronda ≥7·10⁵; si el Este mediano supera al Norte
+   y a ese umbral, las columnas probablemente están invertidas. */
+PI.likelySwappedEN=function(points){
+  var proj=points.filter(function(p){return p&&isFinite(p[0])&&isFinite(p[1])&&(Math.abs(p[0])>10000||Math.abs(p[1])>10000);});
+  if(proj.length<2)return false;
+  var e=median(proj.map(function(p){return Math.abs(p[0]);}));
+  var n=median(proj.map(function(p){return Math.abs(p[1]);}));
+  return e>700000 && e>n;
+};
+
+/* Transformación de similitud 2D (rotación + escala uniforme + traslación) por
+   mínimos cuadrados (Horn) desde pares {src:[px,py], dst:[X,Y]}. Con 2 pares es
+   exacta. dst = [[a,-b],[b,a]]·src + [tx,ty]. */
+PI.similarityFromPairs=function(pairs){
+  var n=pairs.length; if(n<2)return null;
+  var sx=0,sy=0,dx=0,dy=0;
+  pairs.forEach(function(p){sx+=p.src[0];sy+=p.src[1];dx+=p.dst[0];dy+=p.dst[1];});
+  sx/=n;sy/=n;dx/=n;dy/=n;
+  var Sxx=0,Sxy=0,Sss=0;
+  pairs.forEach(function(p){
+    var ax=p.src[0]-sx, ay=p.src[1]-sy, bx=p.dst[0]-dx, by=p.dst[1]-dy;
+    Sxx+=ax*bx+ay*by; Sxy+=ax*by-ay*bx; Sss+=ax*ax+ay*ay;
+  });
+  if(Sss<1e-9)return null;
+  var a=Sxx/Sss, b=Sxy/Sss;
+  return {a:a,b:b,tx:dx-(a*sx-b*sy),ty:dy-(b*sx+a*sy),scale:Math.hypot(a,b)};
+};
+PI.applySimilarity=function(T,pt){return [T.a*pt[0]-T.b*pt[1]+T.tx, T.b*pt[0]+T.a*pt[1]+T.ty];};
 
 // Exporta al ámbito (window.PI en el navegador; module.exports en Node de prueba).
 root.PI=PI;
@@ -6273,7 +6296,8 @@ function piNewState(){
     extractType:'coords',region:null,ocrText:'',rows:[],confRows:[],
     crs:'EPSG:5367',crsInfo:null,polyBuilt:null,workRingM:null,srcRing:null,
     adjust:{dx:0,dy:0,rot:0},adjHist:[],map:null,mapLayer:null,worker:null,
-    planoAreaHa:null,build:null,locMethod:'coords',anchor:null,gridPts:[],cancelOCR:false};
+    planoAreaHa:null,build:null,locMethod:'coords',anchor:null,gridPts:[],cancelOCR:false,
+    located:false,crsConfirmed:false,gridCrs:'EPSG:5367',gridPredioPx:null,shapeVerdict:null};
 }
 
 function openPlanoImport(){
@@ -6358,7 +6382,7 @@ function piWorkingCanvas(){
 
 /* ── modal shell ── */
 var PI_STEPS=[['prepare','Preparar'],['type','Tipo'],['region','Recuadro'],['ocr','OCR'],
-  ['table','Tabla'],['build','Polígono'],['locate','Ubicar'],['adjust','Ajustar'],['accept','Aceptar']];
+  ['table','Tabla'],['build','Polígono'],['validate','Forma'],['locate','Ubicar'],['adjust','Ajustar'],['accept','Aceptar']];
 
 function piShowWiz(){
   var w=document.getElementById('pi-wiz');
@@ -6394,7 +6418,15 @@ function piNext(){
   // Validaciones por paso antes de avanzar
   var st=S.plano;if(!st)return;
   if(PI_CUR==='table'){ if(!piCommitTable())return; }
-  if(PI_CUR==='build'){ if(!st.build){piToast('Genere primero el polígono.',true,3500);return;} }
+  if(PI_CUR==='build'){
+    if(!st.build){piToast('Genere primero el polígono.',true,3500);return;}
+    if(st.extractType==='coords'&&st.crsInfo&&st.crsInfo.needsUser&&!st.crsConfirmed){
+      piToast('CRS incierto: confirme explícitamente el sistema de coordenadas antes de continuar.',true,4500);return;
+    }
+  }
+  if(PI_CUR==='locate'){
+    if(!st.located){piToast('Defina y aplique una ubicación válida (coordenadas absolutas, punto de amarre o cuadrícula) antes de continuar.',true,5000);return;}
+  }
   var i=piStepIndex(PI_CUR);
   if(i<PI_STEPS.length-1)piGoStep(PI_STEPS[i+1][0]);
 }
@@ -6412,10 +6444,11 @@ function piRenderStep(){
   var body=document.getElementById('pi-body');
   var back=document.getElementById('pi-back'), next=document.getElementById('pi-next');
   back.disabled=piStepIndex(PI_CUR)===0;
-  next.style.display='';next.textContent='Continuar ›';
+  // Restablece el botón «Continuar» en cada paso (el paso «Aceptar» lo reasigna).
+  next.style.display='';next.textContent='Continuar ›';next.onclick=piNext;
   document.getElementById('pi-foot-msg').textContent='';
   var fn={prepare:piRenderPrepare,type:piRenderType,region:piRenderRegion,ocr:piRenderOCR,
-    table:piRenderTable,build:piRenderBuild,locate:piRenderLocate,adjust:piRenderAdjust,accept:piRenderAccept}[PI_CUR];
+    table:piRenderTable,build:piRenderBuild,validate:piRenderValidate,locate:piRenderLocate,adjust:piRenderAdjust,accept:piRenderAccept}[PI_CUR];
   if(fn)fn(body);
 }
 
@@ -6632,7 +6665,18 @@ function piFillTable(){
   var flags=isC?PI.validateCoords(st.rows.map(function(r){return {e:PI.parseNumber(r.e),n:PI.parseNumber(r.n)};})):[];
   tb.innerHTML=st.rows.map(function(r,i){
     var cf=st.confRows[i]||{};
-    function cell(field,val,low){var cls=[];if(low!=null&&low<60)cls.push('lowconf');if(flags[i]&&(flags[i].missing&&(field==='e'||field==='n')))cls.push('bad');return '<td contenteditable class="'+cls.join(' ')+'" data-i="'+i+'" data-f="'+field+'" oninput="piCellEdit(this)">'+piEsc(val)+'</td>';}
+    // Marcado de celdas dudosas por tipo
+    var badDir=!isC && (r.dir||'').trim() && !PI.parseBearing(r.dir);
+    var d=isC?null:PI.parseNumber(r.dist);
+    var badDist=!isC && (r.dist||'').toString().trim() && (!isFinite(d)||d<=0);
+    function cell(field,val,low){
+      var cls=[];
+      if(low!=null&&low<60)cls.push('lowconf');
+      if(isC&&flags[i]&&flags[i].missing&&(field==='e'||field==='n'))cls.push('bad');
+      if(field==='dir'&&badDir)cls.push('bad');
+      if(field==='dist'&&badDist)cls.push('bad');
+      return '<td contenteditable class="'+cls.join(' ')+'" data-i="'+i+'" data-f="'+field+'" oninput="piCellEdit(this)">'+piEsc(val)+'</td>';
+    }
     if(isC){
       var dup=flags[i]&&flags[i].duplicate?' class="dup"':'';
       return '<tr'+dup+'>'+cell('p',r.p,100)+cell('e',r.e,cf.e)+cell('n',r.n,cf.n)+'<td><button class="pi-tool" onclick="piDelRow('+i+')">✕</button></td></tr>';
@@ -6648,15 +6692,19 @@ function piTableMsg(){
   var st=S.plano,isC=st.extractType==='coords',msg=document.getElementById('pi-tbl-msg');if(!msg)return;
   var n=0,warns=[];
   if(isC){
-    var pts=st.rows.map(function(r){return {e:PI.parseNumber(r.e),n:PI.parseNumber(r.n)};});
-    var valid=pts.filter(function(p){return isFinite(p.e)&&isFinite(p.n);});
-    n=valid.length;
-    var swap=valid.filter(function(p){return Math.abs(p.n)>800000&&Math.abs(p.e)>Math.abs(p.n);});
-    if(swap.length>valid.length/2&&valid.length)warns.push('posible intercambio Este/Norte');
+    var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];});
+    n=pts.filter(function(p){return isFinite(p[0])&&isFinite(p[1]);}).length;
+    if(PI.likelySwappedEN(pts))warns.push('posible intercambio Este/Norte (¿columnas invertidas?)');
   }else{
-    n=st.rows.filter(function(r){return PI.parseBearing(r.dir)&&isFinite(PI.parseNumber(r.dist));}).length;
+    var bad=0;
+    st.rows.forEach(function(r){
+      var b=PI.parseBearing(r.dir), d=PI.parseNumber(r.dist);
+      if(b&&isFinite(d)&&d>0)n++;
+      else if((r.dir||'').trim()||(r.dist||'').toString().trim()){bad++;}
+    });
+    if(bad)warns.push(bad+' línea(s) con dirección/distancia inválida o distancia ≤ 0');
   }
-  msg.innerHTML=n+' '+(isC?'vértices':'líneas')+' válidos'+(warns.length?' · <span style="color:#ffd9a1">⚠ '+warns.join(', ')+'</span>':'');
+  msg.innerHTML=n+' '+(isC?'vértices':'líneas')+' válidos'+(warns.length?' · <span style="color:#ffd9a1">⚠ '+warns.join('; ')+'</span>':'');
 }
 function piCommitTable(){
   var st=S.plano,isC=st.extractType==='coords';
@@ -6664,8 +6712,8 @@ function piCommitTable(){
     var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
     if(pts.length<3){piToast('Se requieren al menos 3 vértices válidos.',true,3500);return false;}
   }else{
-    var legs=st.rows.map(function(r){var b=PI.parseBearing(r.dir);return b?{azimuth:b.azimuth,distance:PI.parseNumber(r.dist)}:null;}).filter(function(l){return l&&isFinite(l.distance);});
-    if(legs.length<3){piToast('Se requieren al menos 3 líneas válidas (dirección y distancia).',true,4000);return false;}
+    var legs=st.rows.map(function(r){var b=PI.parseBearing(r.dir);return b?{azimuth:b.azimuth,distance:PI.parseNumber(r.dist)}:null;}).filter(function(l){return l&&isFinite(l.distance)&&l.distance>0;});
+    if(legs.length<3){piToast('Se requieren al menos 3 líneas válidas (rumbo/azimut correcto y distancia > 0).',true,4500);return false;}
   }
   return true;
 }
@@ -6677,19 +6725,24 @@ function piRenderBuild(body){
   if(isC){
     var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
     st.crsInfo=PI.classifyCRS(pts,st.ocrText);
-    if(!st.crs||st.crsInfo.needsUser)st.crs=st.crsInfo.best;
+    var needs=st.crsInfo.needsUser;
+    if(!needs){ st.crs=st.crsInfo.best; st.crsConfirmed=true; }   // evidencia suficiente
     var opts=[['EPSG:4326','Geográficas WGS84 (lon/lat)'],['EPSG:5367','CRTM05 / EPSG:5367'],['EPSG:5456','Lambert Norte CR'],['EPSG:5457','Lambert Sur CR'],['EPSG:32616','UTM 16N'],['EPSG:32617','UTM 17N']];
-    crsSel='<div class="pi-row">Sistema de coordenadas: <select class="pi-in" id="pi-crs" onchange="S.plano.crs=this.value;piDoBuild()">'+
-      opts.map(function(o){return '<option value="'+o[0]+'"'+(st.crs===o[0]?' selected':'')+'>'+piEsc(o[1])+'</option>';}).join('')+'</select></div>'+
-      (st.crsInfo.needsUser?'<div class="pi-note pi-warn">CRS incierto: confirme el sistema de coordenadas del plano antes de continuar.</div>':'<div class="pi-note pi-ok">CRS sugerido con evidencia: '+piEsc(st.crsInfo.candidates[0].label)+'</div>');
+    var blank=needs&&!st.crsConfirmed;
+    crsSel='<div class="pi-row">Sistema de coordenadas: <select class="pi-in" id="pi-crs" onchange="piCrsPick(this.value)">'+
+      (blank?'<option value="" selected>— Seleccione el CRS del plano —</option>':'')+
+      opts.map(function(o){return '<option value="'+o[0]+'"'+((!blank&&st.crs===o[0])?' selected':'')+'>'+piEsc(o[1])+'</option>';}).join('')+'</select></div>'+
+      (needs?'<div class="pi-note pi-warn">CRS incierto: <b>debe seleccionar y confirmar</b> el sistema de coordenadas del plano. No se avanzará hasta confirmarlo.</div>':'<div class="pi-note pi-ok">CRS con evidencia: '+piEsc(st.crsInfo.candidates[0].label)+'</div>');
   }
   body.innerHTML=(isC?'':'<div class="pi-note">El derrotero se construye desde un origen local (0,0). La ubicación real se define en el paso siguiente.</div>')+
     crsSel+
     '<div class="pi-row">Área escrita en el plano (ha, opcional): <input class="pi-in" id="pi-plarea" style="width:120px" placeholder="7,59" value="'+(st.planoAreaHa!=null?st.planoAreaHa:'')+'" oninput="S.plano.planoAreaHa=PI.parseNumber(this.value);piBuildStats()"></div>'+
     '<button class="pi-btn prim" onclick="piDoBuild()">📐 Generar / recalcular polígono</button>'+
     '<div id="pi-build-out" style="margin-top:10px"></div>';
-  piDoBuild();
+  if(!isC||st.crsConfirmed)piDoBuild();
+  else document.getElementById('pi-build-out').innerHTML='<div class="pi-note">Seleccione el CRS para generar el polígono.</div>';
 }
+function piCrsPick(v){var st=S.plano;if(!v)return;st.crs=v;st.crsConfirmed=true;piDoBuild();}
 function piDoBuild(){
   var st=S.plano,isC=st.extractType==='coords';
   try{
@@ -6703,7 +6756,7 @@ function piDoBuild(){
       else ringM=b.vertices.map(function(p){return proj4(st.crs,'EPSG:5367',[p[0],p[1]]);});
       build={vertices:b.vertices,area:b.area,perimeter:b.perimeter,closureAbs:0,relClosure:Infinity,fromCoords:true};
     }else{
-      var legs=st.rows.map(function(r){var bb=PI.parseBearing(r.dir);return bb?{azimuth:bb.azimuth,distance:PI.parseNumber(r.dist)}:null;}).filter(function(l){return l&&isFinite(l.distance);});
+      var legs=st.rows.map(function(r){var bb=PI.parseBearing(r.dir);return bb?{azimuth:bb.azimuth,distance:PI.parseNumber(r.dist)}:null;}).filter(function(l){return l&&isFinite(l.distance)&&l.distance>0;});
       var tr=PI.buildTraverse(legs,[0,0]);st.srcRing=tr.vertices.slice();
       ringM=tr.vertices.map(function(p){return [p[0],p[1]];});   // metros locales
       build=tr;build.fromCoords=false;
@@ -6729,36 +6782,95 @@ function piBuildStats(){
     (!b.fromCoords&&b.closureAbs>Math.max(0.5,per*0.01)?'<div class="pi-note pi-warn">El error de cierre supera 1:100. Revise distancias y rumbos (no se ajusta automáticamente).</div>':'');
 }
 
+/* ── PASO: Verificación de forma (reutiliza detectPdfPredioBox) ── */
+function piRenderValidate(body){
+  body.innerHTML='<div class="pi-note">Verificación de forma (opcional): detecta el contorno dibujado en el plano (misma función <code>detectPdfPredioBox</code> del módulo de plano) y superpone el polígono calculado. <b>Solo valida; no modifica el derrotero.</b></div>'+
+    '<div class="pi-row"><button class="pi-btn prim" onclick="piRunShapeCheck()">🔍 Detectar contorno y comparar</button> <button class="pi-btn" onclick="piGoStep(\'locate\')">Omitir verificación</button></div>'+
+    '<div id="pi-val-out" style="margin-top:10px"></div>';
+  if(S.plano.shapeVerdict)piPaintVerdict();
+}
+function piShapeGeoJSON(){
+  // Coloca el polígono en una ubicación nominal del PNLQ para que la relación de
+  // aspecto proyectada sea representativa (la validación es solo de forma).
+  var st=S.plano, ring=st.workRingM, cen=PI.centroid(ring), nominal=[512000,1050000];
+  var shifted=ring.map(function(p){return [p[0]-cen[0]+nominal[0],p[1]-cen[1]+nominal[1]];});
+  var ll=shifted.map(function(p){return proj4('EPSG:5367','EPSG:4326',[p[0],p[1]]);});
+  var coords=ll.map(function(p){return [p[0],p[1]];}); coords.push([coords[0][0],coords[0][1]]);
+  return {type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[coords]}}]};
+}
+function piRunShapeCheck(){
+  var st=S.plano, out=document.getElementById('pi-val-out');
+  out.innerHTML='<div class="pi-note">Detectando contorno…</div>';
+  try{
+    var det=detectPdfPredioBox(piWorkingCanvas(),piShapeGeoJSON());   // función existente
+    var cov=det.fit?det.fit.coverage:0, re=det.ratioErr!=null?det.ratioErr:1;
+    var verdict=(cov>0.8&&re<0.08)?'Coincidencia alta':(cov>0.65&&re<0.2)?'Aceptable':(cov>0.5)?'Dudosa':'Incompatible';
+    st.shapeVerdict={verdict:verdict,coverage:cov,ratioErr:re,box:det.box};
+  }catch(e){
+    st.shapeVerdict={verdict:'no-detectado',error:e.message};
+  }
+  piPaintVerdict();
+}
+function piPaintVerdict(){
+  var st=S.plano, v=st.shapeVerdict, out=document.getElementById('pi-val-out');if(!out||!v)return;
+  if(v.verdict==='no-detectado'){
+    out.innerHTML='<div class="pi-note pi-warn">No se detectó automáticamente un contorno compatible ('+piEsc(v.error||'')+'). Verifique visualmente; puede continuar (el dibujo solo valida).</div>';
+    return;
+  }
+  var color={'Coincidencia alta':'pi-ok','Aceptable':'pi-ok','Dudosa':'pi-warn','Incompatible':'pi-err'}[v.verdict]||'pi-warn';
+  out.innerHTML='<div class="pi-note '+color+'"><b>'+piEsc(v.verdict)+'</b> · cobertura '+(v.coverage*100).toFixed(0)+'% · error de relación de aspecto '+(v.ratioErr*100).toFixed(0)+'%</div>'+
+    '<div class="pi-canvas-wrap" id="pi-val-cw"></div>'+
+    '<div class="pi-note">Rojo: contorno calculado superpuesto al recuadro detectado en el plano. El dibujo solo valida; no altera la geometría.</div>';
+  var box=v.box, canvas=piWorkingCanvas();
+  var scale=Math.min(1,520/Math.max(box.w,box.h));
+  var crop=document.createElement('canvas');crop.width=Math.max(1,Math.round(box.w*scale));crop.height=Math.max(1,Math.round(box.h*scale));
+  var cx=crop.getContext('2d');cx.drawImage(canvas,box.x,box.y,box.w,box.h,0,0,crop.width,crop.height);
+  var ring=st.workRingM, xs=ring.map(function(p){return p[0];}), ys=ring.map(function(p){return p[1];});
+  var minx=Math.min.apply(null,xs),maxx=Math.max.apply(null,xs),miny=Math.min.apply(null,ys),maxy=Math.max.apply(null,ys);
+  var sw=(maxx-minx)||1, sh=(maxy-miny)||1;
+  cx.strokeStyle='#e02f2f';cx.lineWidth=2;cx.beginPath();
+  ring.forEach(function(p,i){var px=((p[0]-minx)/sw)*crop.width, py=crop.height-((p[1]-miny)/sh)*crop.height;if(i===0)cx.moveTo(px,py);else cx.lineTo(px,py);});
+  cx.closePath();cx.stroke();
+  document.getElementById('pi-val-cw').appendChild(crop);
+}
+
 /* ── PASO: Ubicar ── */
 function piRenderLocate(body){
   var st=S.plano,isC=st.extractType==='coords';
-  var absOk=isC&&st.crs!=='__local';
-  st.locMethod=absOk?'coords':'amarre';
-  body.innerHTML='<div class="pi-note">Defina dónde se ubica el predio. La colocación es aproximada y se afina en el paso de ajuste.</div>'+
-    '<label class="pi-row"><input type="radio" name="pi-loc" value="coords" '+(absOk?'checked':'disabled')+' onchange="piSetLoc(this.value)"> Coordenadas absolutas (reproyectar directamente)'+(absOk?'':' — requiere listado de coordenadas con CRS')+'</label>'+
-    '<label class="pi-row"><input type="radio" name="pi-loc" value="amarre" '+(absOk?'':'checked')+' onchange="piSetLoc(this.value)"> Punto de amarre (un vértice con coordenada conocida)</label>'+
-    '<label class="pi-row"><input type="radio" name="pi-loc" value="grid" onchange="piSetLoc(this.value)"> Ubicación aproximada por minimapa / cuadrícula</label>'+
+  var absOk=isC&&st.crsConfirmed;
+  st.locMethod=absOk?'coords':(st.locMethod==='coords'?'amarre':st.locMethod);
+  body.innerHTML='<div class="pi-note">Defina dónde se ubica el predio. Debe aplicar una ubicación válida para continuar; la colocación es aproximada y se afina en el paso de ajuste.</div>'+
+    '<label class="pi-row"><input type="radio" name="pi-loc" value="coords" '+(absOk?'checked':'disabled')+' onchange="piSetLoc(this.value)"> Coordenadas absolutas (reproyectar directamente)'+(absOk?'':' — requiere listado de coordenadas con CRS confirmado')+'</label>'+
+    '<label class="pi-row"><input type="radio" name="pi-loc" value="amarre" '+(!absOk&&st.locMethod==='amarre'?'checked':'')+' onchange="piSetLoc(this.value)"> Punto de amarre (un vértice con coordenada conocida)</label>'+
+    '<label class="pi-row"><input type="radio" name="pi-loc" value="grid" '+(st.locMethod==='grid'?'checked':'')+' onchange="piSetLoc(this.value)"> Ubicación aproximada por minimapa / cuadrícula</label>'+
     '<div id="pi-loc-panel" style="margin-top:8px"></div>';
   piSetLoc(st.locMethod);
 }
+var PI_CRS_OPTS='<option value="EPSG:5367">CRTM05 / EPSG:5367</option><option value="EPSG:5456">Lambert Norte CR</option><option value="EPSG:5457">Lambert Sur CR</option><option value="EPSG:32616">UTM 16N</option><option value="EPSG:32617">UTM 17N</option><option value="EPSG:4326">Geográficas WGS84</option>';
 function piSetLoc(m){
   var st=S.plano;st.locMethod=m;var p=document.getElementById('pi-loc-panel');if(!p)return;
   if(m==='coords'){
-    p.innerHTML='<div class="pi-note pi-ok">Se reproyectará el listado de coordenadas ('+piEsc(st.crs)+') directamente a la ubicación real.</div>';
+    st.located=true;
+    p.innerHTML='<div class="pi-note pi-ok">Ubicación por reproyección directa del listado de coordenadas ('+piEsc(st.crs)+'). Lista para ajustar.</div>';
   }else if(m==='amarre'){
+    st.located=false;
     var vi=st.srcRing.map(function(_,i){return '<option value="'+i+'">Vértice '+(i+1)+'</option>';}).join('');
     p.innerHTML='<div class="pi-note">Indique un vértice del predio y su coordenada absoluta conocida (del plano o de un mojón).</div>'+
-      '<div class="pi-row">Vértice: <select class="pi-in" id="pi-am-v">'+vi+'</select>'+
-      ' CRS: <select class="pi-in" id="pi-am-crs"><option value="EPSG:5367">CRTM05</option><option value="EPSG:5456">Lambert Norte</option><option value="EPSG:5457">Lambert Sur</option><option value="EPSG:32616">UTM 16N</option><option value="EPSG:32617">UTM 17N</option><option value="EPSG:4326">Geográficas</option></select></div>'+
+      '<div class="pi-row">Vértice: <select class="pi-in" id="pi-am-v">'+vi+'</select> CRS: <select class="pi-in" id="pi-am-crs">'+PI_CRS_OPTS+'</select></div>'+
       '<div class="pi-row">Este/X: <input class="pi-in" id="pi-am-e" style="width:130px"> Norte/Y: <input class="pi-in" id="pi-am-n" style="width:130px"> <button class="pi-tool" onclick="piApplyAmarre()">Anclar</button></div>'+
       '<div id="pi-am-out" style="font-size:12px;color:#9db4d6"></div>';
   }else{
-    p.innerHTML='<div class="pi-note">Marque al menos dos intersecciones de la cuadrícula sobre el plano e introduzca sus coordenadas; se estimará una ubicación aproximada del predio.</div>'+
-      '<div class="pi-row"><button class="pi-tool" onclick="piGridAdd()">＋ Marcar intersección</button> <span id="pi-grid-stat">0 puntos</span></div>'+
+    st.located=false;
+    p.innerHTML='<div class="pi-note">1) Elija el CRS de la cuadrícula. 2) Marque <b>≥2 intersecciones</b> (clic + coordenadas). 3) Marque la <b>posición del predio</b> en el plano. Se estimará una ubicación aproximada por transformación de similitud (escala y orientación reales).</div>'+
+      '<div class="pi-row">CRS de la cuadrícula: <select class="pi-in" id="pi-grid-crs" onchange="S.plano.gridCrs=this.value">'+PI_CRS_OPTS+'</select></div>'+
+      '<div class="pi-row"><button class="pi-tool" id="pi-grid-mode-i" onclick="piGridMode(\'inter\')">＋ Marcar intersección</button>'+
+      '<button class="pi-tool" id="pi-grid-mode-p" onclick="piGridMode(\'predio\')">◎ Marcar posición del predio</button>'+
+      ' <span id="pi-grid-stat">0 intersecciones · predio sin marcar</span></div>'+
       '<div id="pi-grid-list"></div>'+
-      '<div class="pi-canvas-wrap" id="pi-cw" style="max-height:320px;overflow:auto"></div>'+
+      '<div class="pi-canvas-wrap" id="pi-cw" style="max-height:340px;overflow:auto"></div>'+
       '<div class="pi-note pi-warn" style="margin-top:8px">Ubicación aproximada derivada del recuadro cartográfico.</div>';
-    piMountGrid();
+    st._gridClickMode='inter';
+    piMountGrid();piGridCompute();piGridRefresh();   // restaura la ubicación si ya hay datos
   }
 }
 function piApplyAmarre(){
@@ -6769,42 +6881,54 @@ function piApplyAmarre(){
   if(!isFinite(e)||!isFinite(n)){piToast('Introduzca coordenadas válidas.',true,3000);return;}
   var tgt=crs==='EPSG:5367'?[e,n]:proj4(crs,'EPSG:5367',[e,n]);
   var v=st.workRingM[vi];
-  st.anchor={dx:tgt[0]-v[0],dy:tgt[1]-v[1]};
-  st.workRingM=st.workRingM.map(function(p){return [p[0]+st.anchor.dx,p[1]+st.anchor.dy];});
-  document.getElementById('pi-am-out').textContent='Predio anclado. Afine en el paso de ajuste.';
+  var dx=tgt[0]-v[0],dy=tgt[1]-v[1];
+  st.workRingM=st.workRingM.map(function(p){return [p[0]+dx,p[1]+dy];});
+  st.anchor={vertex:vi,crs:crs,e:e,n:n};st.located=true;st.locMethod='amarre';
+  document.getElementById('pi-am-out').innerHTML='<span style="color:#bff0cf">✔ Predio anclado por el vértice '+(vi+1)+'. Afine en el paso de ajuste.</span>';
   piToast('Predio anclado por punto de amarre.',false,2500);
 }
+function piGridMode(m){S.plano._gridClickMode=m;piToast(m==='predio'?'Haga clic en la posición del predio dentro del plano.':'Haga clic en una intersección de la cuadrícula.',false,2500);
+  ['i','p'].forEach(function(k){var b=document.getElementById('pi-grid-mode-'+k);if(b)b.style.outline=(k==='i'&&m==='inter')||(k==='p'&&m==='predio')?'2px solid #f3e3a3':'';});}
 function piMountGrid(){
   var st=S.plano,wrap=document.getElementById('pi-cw');if(!wrap)return;
   var base=piWorkingCanvas();var maxW=Math.min(900,wrap.parentElement.clientWidth-4);var sc=Math.min(1,maxW/base.width);st.dispScale=sc;
   var disp=document.createElement('canvas');disp.width=Math.round(base.width*sc);disp.height=Math.round(base.height*sc);disp.getContext('2d').drawImage(base,0,0,disp.width,disp.height);
   wrap.innerHTML='';wrap.appendChild(disp);wrap.style.width=disp.width+'px';
-  disp.onclick=function(ev){var r=disp.getBoundingClientRect();var x=(ev.clientX-r.left)/sc,y=(ev.clientY-r.top)/sc;st._gridPend=[x,y];piToast('Introduzca la coordenada de esa intersección.',false,2000);piGridPrompt(x,y);};
+  disp.onclick=function(ev){var r=disp.getBoundingClientRect();var x=(ev.clientX-r.left)/sc,y=(ev.clientY-r.top)/sc;
+    if(st._gridClickMode==='predio'){st.gridPredioPx=[x,y];piGridCompute();piGridRefresh();}
+    else piGridPrompt(x,y);};
 }
-function piGridAdd(){piToast('Haga clic en una intersección de la cuadrícula del plano.',false,2500);}
 function piGridPrompt(x,y){
-  var st=S.plano;
-  var e=prompt('Este/X (CRTM05) de la intersección marcada:');if(e==null)return;
-  var n=prompt('Norte/Y (CRTM05) de la intersección marcada:');if(n==null)return;
+  var st=S.plano, crsLabel=st.gridCrs;
+  var e=prompt('Este/X ('+crsLabel+') de la intersección marcada:');if(e==null)return;
+  var n=prompt('Norte/Y ('+crsLabel+') de la intersección marcada:');if(n==null)return;
   var ev=PI.parseNumber(e),nv=PI.parseNumber(n);if(!isFinite(ev)||!isFinite(nv)){piToast('Coordenadas inválidas.',true,2500);return;}
-  st.gridPts.push({px:x,py:y,e:ev,n:nv});piGridRefresh();
+  st.gridPts.push({px:x,py:y,e:ev,n:nv});piGridCompute();piGridRefresh();
+}
+/* Georreferencia por similitud: pixel → coordenadas de la cuadrícula (CRS elegido)
+   → CRTM05; coloca el centroide del predio en la posición marcada. No rota el
+   predio (el derrotero ya está referido al Norte verdadero). */
+function piGridCompute(){
+  var st=S.plano;
+  if(st.gridPts.length<2||!st.gridPredioPx){st.located=false;return null;}
+  var pairs=st.gridPts.map(function(g){return {src:[g.px,g.py],dst:[g.e,g.n]};});
+  var T=PI.similarityFromPairs(pairs);if(!T){st.located=false;return null;}
+  var world=PI.applySimilarity(T,st.gridPredioPx);           // en el CRS de la cuadrícula
+  var w5367=st.gridCrs==='EPSG:5367'?world:proj4(st.gridCrs,'EPSG:5367',[world[0],world[1]]);
+  var cen=PI.centroid(st.workRingM);
+  st.workRingM=st.workRingM.map(function(p){return [p[0]-cen[0]+w5367[0],p[1]-cen[1]+w5367[1]];});
+  st.located=true;st.locMethod='grid';st._gridScale=T.scale;
+  return {mPerPx:T.scale};
 }
 function piGridRefresh(){
-  var st=S.plano;var stat=document.getElementById('pi-grid-stat');if(stat)stat.textContent=st.gridPts.length+' puntos';
-  var list=document.getElementById('pi-grid-list');if(list)list.innerHTML=st.gridPts.map(function(g,i){return '<div class="pi-chip">#'+(i+1)+' px('+Math.round(g.px)+','+Math.round(g.py)+') → E'+g.e+' N'+g.n+' <a href="#" onclick="S.plano.gridPts.splice('+i+',1);piGridRefresh();return false">✕</a></div>';}).join('');
-  if(st.gridPts.length>=2){
-    // escala px→m por regresión simple sobre distancias
-    var g=st.gridPts, sMx=0,sPx=0,cnt=0;
-    for(var i=0;i<g.length;i++)for(var j=i+1;j<g.length;j++){var dm=Math.hypot(g[i].e-g[j].e,g[i].n-g[j].n);var dp=Math.hypot(g[i].px-g[j].px,g[i].py-g[j].py);if(dp>1){sMx+=dm;sPx+=dp;cnt++;}}
-    var mPerPx=cnt?sMx/sPx:1;
-    // ancla: usa el primer punto para fijar E,N del origen del plano
-    st._gridAnchor={mPerPx:mPerPx,ref:g[0]};
-    // coloca el centroide del predio en la coordenada media de la cuadrícula
-    var midE=g.reduce(function(a,b){return a+b.e;},0)/g.length, midN=g.reduce(function(a,b){return a+b.n;},0)/g.length;
-    var cen=PI.centroid(st.workRingM);
-    st.workRingM=st.workRingM.map(function(p){return [p[0]-cen[0]+midE,p[1]-cen[1]+midN];});
-    var out=document.getElementById('pi-grid-list');
-    if(out)out.innerHTML+='<div class="pi-note pi-ok" style="margin-top:6px">Ubicación aproximada estimada ('+mPerPx.toFixed(2)+' m/px). Afine en el ajuste.</div>';
+  var st=S.plano;
+  var stat=document.getElementById('pi-grid-stat');
+  if(stat)stat.textContent=st.gridPts.length+' intersecciones · '+(st.gridPredioPx?'predio marcado':'predio sin marcar');
+  var list=document.getElementById('pi-grid-list');
+  if(list){
+    list.innerHTML=st.gridPts.map(function(g,i){return '<div class="pi-chip">#'+(i+1)+' px('+Math.round(g.px)+','+Math.round(g.py)+') → E '+g.e+' N '+g.n+' <a href="#" onclick="S.plano.gridPts.splice('+i+',1);piGridCompute();piGridRefresh();return false">✕</a></div>';}).join('');
+    if(st.located&&st._gridScale)list.innerHTML+='<div class="pi-note pi-ok" style="margin-top:6px">✔ Ubicación aproximada estimada ('+st._gridScale.toFixed(3)+' m/px). Afine en el ajuste.</div>';
+    else if(st.gridPts.length<2||!st.gridPredioPx)list.innerHTML+='<div class="pi-note" style="margin-top:6px">Faltan datos: marque ≥2 intersecciones y la posición del predio.</div>';
   }
 }
 
@@ -6836,8 +6960,9 @@ function piDrawAdjust(fit){
   var ll=piCurrentLatLng();
   var latlngs=ll.map(function(p){return [p[1],p[0]];});
   if(st.mapLayer)st.map.removeLayer(st.mapLayer);
-  st.mapLayer=L.polygon(latlngs,{color:'#111',weight:4,fillColor:'#fff06a',fillOpacity:0.18}).addTo(st.map);
-  L.polygon(latlngs,{color:'#fff06a',weight:2,dashArray:'8 4',fill:false}).addTo(st.mapLayer);
+  var halo=L.polygon(latlngs,{color:'#111',weight:4,fillColor:'#fff06a',fillOpacity:0.18});
+  var line=L.polygon(latlngs,{color:'#fff06a',weight:2,dashArray:'8 4',fill:false});
+  st.mapLayer=L.featureGroup([halo,line]).addTo(st.map);   // grupo de capas, no un polígono
   if(fit)st.map.fitBounds(st.mapLayer.getBounds(),{padding:[24,24]});
   var haNow=PI.shoelaceArea(PII_ring())/10000;
   var stt=document.getElementById('pi-adj-stat');if(stt)stt.textContent='Área (constante): '+haNow.toFixed(4)+' ha · desplazamiento E '+st.adjust.dx.toFixed(1)+' m, N '+st.adjust.dy.toFixed(1)+' m, rotación '+st.adjust.rot+'°';
@@ -6865,9 +6990,11 @@ function piRenderAccept(body){
     '<tr><th>Tipo de extracción</th><td>'+piEsc(st.extractType)+'</td></tr>'+
     '<tr><th>CRS original</th><td>'+piEsc(st.extractType==='coords'?st.crs:'derrotero local')+'</td></tr>'+
     '<tr><th>Área</th><td>'+haNow.toFixed(4)+' ha</td></tr>'+
-    '<tr><th>Método de ubicación</th><td>'+piEsc(st.locMethod)+'</td></tr>'+
+    '<tr><th>Método de ubicación</th><td>'+piEsc(st.locMethod)+(st.located?' <span style="color:#bff0cf">✔ aplicada</span>':' <span style="color:#ffc9c9">✕ no aplicada</span>')+'</td></tr>'+
+    '<tr><th>Verificación de forma</th><td>'+piEsc(st.shapeVerdict?st.shapeVerdict.verdict:'omitida')+'</td></tr>'+
     '<tr><th>Ajuste aplicado</th><td>E '+st.adjust.dx.toFixed(1)+' m · N '+st.adjust.dy.toFixed(1)+' m · rot '+st.adjust.rot+'°</td></tr>'+
     '</tbody></table>'+
+    '<div class="pi-note">Al aceptar se cargará además el plano como capa de referencia para continuar con el ajuste del dibujo.</div>'+
     '<div class="pi-note pi-warn">Geometría derivada de plano: verifíquela contra la cartografía oficial antes de emitir criterio.</div>';
   var next=document.getElementById('pi-next');next.textContent='✅ Aceptar como polígono de análisis';next.onclick=piAccept;
 }
@@ -6886,28 +7013,38 @@ function piBuildProvenance(){
     cierreRelativo:b&&!b.fromCoords&&isFinite(b.relClosure)?('1:'+Math.round(b.relClosure)):null,
     areaPlanoHa:st.planoAreaHa!=null&&isFinite(st.planoAreaHa)?st.planoAreaHa:null,
     metodoUbicacion:st.locMethod,
+    ubicada:!!st.located,
     traslacionEsteM:+st.adjust.dx.toFixed(2),
     traslacionNorteM:+st.adjust.dy.toFixed(2),
     rotacionGrados:st.adjust.rot,
     confianza:st.crsInfo?st.crsInfo.confidence:null,
+    verificacionForma:st.shapeVerdict?st.shapeVerdict.verdict:null,
     geometriaDerivadaDePlano:true,
     generado:new Date().toISOString(),
     version:APP_VERSION
   };
 }
 function piAccept(){
-  var st=S.plano;
+  var st=S.plano;if(!st)return;
+  if(!st.located){piToast('No se puede aceptar: el predio no tiene una ubicación válida aplicada.',true,5000);piGoStep('locate');return;}
   try{
     var ll=piCurrentLatLng();
     var ring=ll.map(function(p){return [p[0],p[1]];});
     ring.push([ring[0][0],ring[0][1]]);   // cierra el anillo GeoJSON
     var prov=piBuildProvenance();
     var fc={type:'FeatureCollection',features:[{type:'Feature',properties:prov,geometry:{type:'Polygon',coordinates:[ring]}}]};
+    var file=st.file;   // se conserva para continuar con el dibujo del plano
     piReleaseOCR();if(st.map){try{st.map.remove();}catch(e){}st.map=null;}
     S.plano=null;piCloseWiz();
     switchTab('carga');
     addUser(fc,'Plano: '+prov.archivoFuente);
     piToast('✅ Predio importado del plano ('+prov.areaHa.toFixed(2)+' ha). Puede ejecutar los análisis.',false,5000);
+    // Continúa con el flujo existente de ajuste del dibujo del plano (reutiliza el
+    // mismo archivo; el módulo de plano hace su propia revisión de seguridad).
+    if(file&&typeof handlePdfPlanUpload==='function'){
+      try{ if(typeof setPdfPlanMode==='function')setPdfPlanMode('automatic'); }catch(e){}
+      setTimeout(function(){ try{ handlePdfPlanUpload(file); }catch(e){console.error(e);} },600);
+    }
   }catch(e){piToast('No se pudo incorporar el polígono: '+e.message,true,6000);console.error(e);}
 }
 
