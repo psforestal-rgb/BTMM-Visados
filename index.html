@@ -1444,8 +1444,15 @@ function geomAreaCRTM05(geom){
 }
 function areaHa(f){
   try{
-    const g=f.geometry?f.geometry:f;
-    const a=geomAreaCRTM05(g)/10000;
+    let a;
+    if(f&&f.type==='FeatureCollection'&&Array.isArray(f.features)){
+      // Colección completa: suma planar CRTM05 por geometría (evita el respaldo
+      // geodésico de Turf, que sobreestima el área respecto a los análisis).
+      a=f.features.reduce((s,ft)=>s+geomAreaCRTM05(ft&&ft.geometry?ft.geometry:ft),0)/10000;
+    }else{
+      const g=f&&f.geometry?f.geometry:f;
+      a=geomAreaCRTM05(g)/10000;
+    }
     if(isFinite(a)&&a>0)return a;
   }catch(e){}
   return areaHaGeo(f); // respaldo geodésico
@@ -2489,7 +2496,9 @@ function addUser(gj,name){
   clearUserLayer();
   S.uGJ=gj;
   S.uLfl=addPredioContrastLayer(gj,map,{fillOpacity:0.12,lineFillOpacity:0.04});
-  const n=gj.features.length,ha=areaHa(gj);
+  // El área mostrada usa el Feature de unión (misma base que los análisis),
+  // de modo que la superficie del cargador coincide con la reportada por CRTM05.
+  const n=gj.features.length,ha=areaHa(userUnionFeature(gj)||gj);
   document.getElementById('uli').style.display='block';
   document.getElementById('uln').textContent=name;
   document.getElementById('ulf').textContent=`${n} polígono${n>1?'s':''} · ${ha.toFixed(2)} ha`;
