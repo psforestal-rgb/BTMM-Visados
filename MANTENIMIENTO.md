@@ -27,9 +27,16 @@ No hay instalación. Opciones:
 ```bash
 python3 scripts/check_consistency.py       # invariantes del repo (sin red)
 python3 scripts/check_cdn_integrity.py     # contrato con el CDN (necesita red)
+node scripts/plano_import.test.mjs         # núcleo «Importar predio desde plano» (sin red)
 npm i playwright && npx playwright install chromium
 node scripts/smoke_test.mjs                # E2E: carga, SRI, CSP, análisis
 ```
+
+`plano_import.test.mjs` extrae el núcleo determinista embebido en `index.html`
+(marcadores `__PI_CORE_START__`/`__PI_CORE_END__`) y lo prueba en Node sin red:
+rumbo→azimut (W y O como oeste), G/M/S, coma/punto decimal, construcción y error
+de cierre, traslación/rotación sin alterar el área, área CRTM05 de un
+FeatureCollection y clasificación de CRS.
 
 Los tres se ejecutan automáticamente en GitHub Actions (`ci.yml` en cada
 push/PR; `vigilancia-dependencias.yml` cada lunes).
@@ -72,6 +79,7 @@ auto-verificaciones (✅/❌) del HTML generado; no publicar si alguna falla.
 | shpjs / JSZip / togeojson | 4.0.4 / 3.10.1 / 0.16.0 | formatos de entrada | carga de predios |
 | PDF.js | 3.11.174 | plano PDF (con `isEvalSupported:false`) | módulo plano |
 | UTIF | 3.1.0 | plano TIFF (carga diferida) | módulo plano |
+| Tesseract.js | 5.1.1 | OCR local del asistente «Importar predio desde plano» (carga diferida + SRI en el script principal; worker, core WASM y `eng.traineddata` los carga la propia librería desde jsDelivr, dentro de la CSP y en un Web Worker) | módulo importar-plano (degrada a transcripción manual) |
 
 **Decisiones tomadas para minimizar cambios futuros:**
 

@@ -13,6 +13,17 @@
   `self` + jsDelivr; `object-src 'none'`, `frame-src 'none'`).
 - PDF.js opera con `isEvalSupported:false` (mitiga CVE-2024-4367: un PDF
   malicioso no puede ejecutar JavaScript).
+- El asistente **«Importar predio desde plano»** procesa el plano y ejecuta el
+  **OCR íntegramente en el navegador**: no hay servicio externo de OCR y ni el
+  plano ni las coordenadas transcritas se envían a ningún servidor. Tesseract.js
+  se carga **bajo demanda** (solo al abrir el asistente), con **SRI** en el script
+  principal y en un **Web Worker**; sus recursos (worker, core WASM y modelo de
+  idioma) se sirven desde jsDelivr, dentro de la CSP vigente (`script-src`/
+  `connect-src` limitados a `self` + jsDelivr; `worker-src 'self' blob:`). El
+  plano pasa antes por la **revisión local de seguridad** (misma que el módulo de
+  plano), el texto del OCR se **escapa** antes de mostrarse y los workers, canvas
+  e imágenes se liberan al terminar o cancelar. La geometría resultante se marca
+  como «derivada de plano» y debe verificarse contra la cartografía oficial.
 - El proxy OGC (Cloudflare Worker) tiene lista blanca de dominios destino,
   bloqueo de IPs privadas, límites de tamaño/tiempo y no maneja credenciales.
 

@@ -35,6 +35,10 @@ TIMEOUT = 30
 SOLO_DISPONIBILIDAD = [
     "https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.wasm",
     "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js",
+    # OCR bajo demanda del asistente «Importar predio desde plano» (Tesseract.js
+    # carga estos recursos internamente en un Web Worker; sin SRI posible).
+    "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js",
+    "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core-simd.wasm.js",
 ]
 
 # Servicios externos de los que depende el visor en runtime (solo sondeo).
