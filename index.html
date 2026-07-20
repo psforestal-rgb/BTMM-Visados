@@ -398,6 +398,8 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
       <div style="font-size:10px;color:#8aa0bd;padding:3px 4px 0;line-height:1.4">Capa de referencia transparente con etiquetas priorizadas sobre caminos y límites. Disponible en todas las pestañas.</div>
       <label class="ltog" style="margin-top:6px"><input type="checkbox" id="cb-aerial"><span style="flex:1">Imagen aérea reciente</span><span class="lbadge" id="aerial-badge">Esri</span></label>
       <div id="aerial-src" style="font-size:10px;color:#8aa0bd;padding:3px 4px 0;line-height:1.4">Ortofoto satelital reciente (Esri World Imagery) como fondo del visor, con sobreampliación. Disponible en todas las pestañas. Active la capa para consultar la fecha de la imagen.</div>
+            <div class="lrow" style="margin-top:7px" title="Delimitación del área cubierta por la herramienta (capa fija en todos los mapas)"><span class="lsw" style="width:22px;height:10px;background:#fff;border:1.5px dashed #000"></span><span class="ll"><b>Límite del área cubierta</b> — capa fija</span></div>
+      <div style="font-size:10px;color:#8aa0bd;padding:2px 4px 0;line-height:1.4">Delimitación del área cubierta por la herramienta (todos los módulos). Perímetro en línea punteada negra, visible siempre en todos los mapas y visores.</div>
       <div style="margin-top:5px"><div style="font-size:11px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Opacidad referencias</div>
       <input type="range" id="ref-op" min="20" max="100" value="85" style="width:100%;accent-color:var(--acc2)">
       <div style="font-size:11px;color:var(--txt2);text-align:center"><span id="ref-opv">85</span>%</div></div>
@@ -733,7 +735,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-07-02-bienvenida-pnlq-v37';
+const APP_VERSION='2026-07-17-area-cubierta-v38';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -986,6 +988,21 @@ function getReportSelection(){
   return selected;
 }
 
+/* ── ÁREA CUBIERTA POR LA HERRAMIENTA (capa fija) ──
+   Perímetro simplificado (BTMM-Simplymask, reproyectado de CRTM05/EPSG:5367 a
+   WGS84) del área con datos en todos los módulos. Se dibuja FIJO en el visor
+   principal, en todos los mini-mapas y en los mapas del informe: solo contorno
+   en línea punteada negra, sin relleno y sin interacción. En simbología figura
+   con la denominación resumida MASK_LEGEND_LABEL. */
+const MASK_LEGEND_LABEL='Límite del área cubierta';
+const COVERAGE_MASK_GJ={"type":"Feature","properties":{"nombre":"Delimitación del área cubierta por la herramienta"},"geometry":{"type":"MultiPolygon","coordinates":[[[[-83.997359,9.749258],[-84.005215,9.796089],[-83.937258,9.81972],[-83.837743,9.739802],[-83.813766,9.781139],[-83.716422,9.816317],[-83.675611,9.797382],[-83.662719,9.75342],[-83.497419,9.80258],[-83.409723,9.680193],[-83.484713,9.597082],[-83.610288,9.595491],[-83.682891,9.533367],[-83.746786,9.544113],[-83.786467,9.583659],[-83.802833,9.52597],[-83.837566,9.51337],[-83.897191,9.600217],[-83.867908,9.652955],[-83.997359,9.749258]]]]}};
+const COVERAGE_MASK_STYLE={color:'#000',weight:1.6,opacity:0.9,dashArray:'6 5',fill:false};
+function addCoverageMaskToMap(m,paneName){
+  const opts={interactive:false,style:COVERAGE_MASK_STYLE};
+  if(paneName)opts.pane=paneName;
+  try{return L.geoJSON(COVERAGE_MASK_GJ,opts).addTo(m);}catch(e){return null;}
+}
+
 /* ── MAP SETUP ── */
 const map=L.map('mc',{center:[9.58,-83.85],zoom:11,maxZoom:22});
 
@@ -998,6 +1015,8 @@ function createRefPane(name,zIndex){
 createRefPane('refLinePane',610);
 createRefPane('refLabelPane',660);
 createRefPane('pdfPlanPane',720);
+createRefPane('coverageMaskPane',630);
+addCoverageMaskToMap(map,'coverageMaskPane');
 
 /* Control de mapa: zoom al polígono de análisis cargado. Disponible en todas las
    pestañas con visor (el mapa es compartido). Si aún no hay polígono, avisa. */
@@ -1875,6 +1894,7 @@ function initFuentesOverlayMap(key,userGeoJSON,userUnion,daLayers){
   }
   addPredioLocator(m,userGeoJSON,userUnion,{forceMarker:true,label:false});
   addAspReferenceToMap(m);
+  addCoverageMaskToMap(m);
   const _items=[];
   try{const pc=turf.centroid(userUnion).geometry.coordinates;_items.push({lat:pc[1],lng:pc[0],lines:['Predio de análisis'],color:'#8a6d00'});}catch(e){}
   (S.fuentes.dictLabels||[]).forEach(d=>{const ln=[];if(d.tf)ln.push('Tipo: '+htmlEsc(d.tf));if(d.of)ln.push('Oficio: '+htmlEsc(d.of));if(ln.length)_items.push({lat:d.lat,lng:d.lng,lines:ln,color:'#a01a5c',dot:true,dotR:6});});
@@ -1899,6 +1919,7 @@ function initPredioDrawingMap(key,userGeoJSON,userUnion){
   try{if(fb&&fb.isValid&&fb.isValid())m.fitBounds(fb,{padding:[8,8],maxZoom:19});else m.setView([9.58,-83.85],14);}catch(e){m.setView([9.58,-83.85],14);}
   // Dibujo del plano cargado (si existe), por debajo del contorno oficial.
   if(S.pdfPlanData){try{m.createPane('pdfPlanPane');m.getPane('pdfPlanPane').style.zIndex=650;createPdfPlanLayer(S.pdfPlanData).addTo(m);}catch(e){console.warn('dibujo predio PDF:',e);}}
+  addCoverageMaskToMap(m);
   addPredioContrastLayer(userGeoJSON,m,{fillOpacity:0.12,lineFillOpacity:0.04,lineWeight:2.7,haloWeight:5.4,interactive:false}).bringToFront();
   m.invalidateSize();
 }
@@ -3399,6 +3420,7 @@ function initMiniMap(key,userGeoJSON,bounds){
     }).addTo(m);
   }
   addAspReferenceToMap(m);
+  addCoverageMaskToMap(m);
   addPredioContrastLayer(userGeoJSON,m,{fillOpacity:0.02,lineFillOpacity:0,lineWeight:2.6,haloWeight:5,interactive:false}).bringToFront();
   try{m.fitBounds(bounds,MM_FIT);}catch(e){}
   m.invalidateSize();
@@ -3421,6 +3443,7 @@ function initAerialMiniMap(userGeoJSON,bounds){
     }catch(e){console.warn('Mini mapa PDF:',e);}
   }
   addAspReferenceToMap(m);
+  addCoverageMaskToMap(m);
   addPredioContrastLayer(userGeoJSON,m,{fillOpacity:0.02,lineFillOpacity:0,lineWeight:2.6,haloWeight:5,interactive:false}).bringToFront();
   let center;
   try{
@@ -3795,6 +3818,7 @@ function initAspResultMap(key,userGeoJSON,userUnion,rows,zoomToPredio){
     style:f=>aspStyle(f,hit.has(aspName(f))),
     onEachFeature:(f,l)=>l.bindTooltip(htmlEsc(aspName(f)),{className:'itt',sticky:true})
   }).addTo(m);
+  addCoverageMaskToMap(m);
   if(zoomToPredio){
     addPredioLocator(m,userGeoJSON,userUnion,{labelText:'Predio analizado'});
   }else{
@@ -4005,6 +4029,7 @@ async function initTerrainResultMap(key,userGeoJSON,userUnion,zoomToPredio){
     }
   }catch(e){}
   addAspReferenceToMap(m);
+  addCoverageMaskToMap(m);
   m.invalidateSize();
 }
 
@@ -4236,6 +4261,7 @@ function initPneResultMap(key,cfg,userGeoJSON,userUnion){
   m.invalidateSize();
   try{if(view.bounds&&view.bounds.isValid&&view.bounds.isValid())m.fitBounds(view.bounds,view.options);}catch(e){}
   addAspReferenceToMap(m);
+  addCoverageMaskToMap(m);
   addFincaLabelsToMap(m,cfg);
 }
 
@@ -4730,6 +4756,16 @@ function _aspHatchPattern(ctx){
   x.beginPath();x.moveTo(6,10);x.lineTo(10,6);x.stroke();
   return ctx.createPattern(c,'repeat');
 }
+/* Perímetro del área cubierta por la herramienta sobre el canvas del informe
+   (línea punteada negra, sin relleno; misma simbología que en el visor). */
+function _drawCoverageMask(ctx,m,scale){
+  ctx.save();
+  ctx.setLineDash([6*scale,5*scale]);ctx.lineWidth=Math.max(1.2,1.6*scale);ctx.strokeStyle='rgba(0,0,0,0.9)';ctx.lineJoin='round';
+  const g=COVERAGE_MASK_GJ.geometry;
+  if(g.type==='Polygon'){_drawRings(ctx,m,g.coordinates,scale);ctx.stroke();}
+  else if(g.type==='MultiPolygon')g.coordinates.forEach(pp=>{_drawRings(ctx,m,pp,scale);ctx.stroke();});
+  ctx.setLineDash([]);ctx.restore();
+}
 /* Capa ASP de referencia sobre el canvas del informe (no en los mapas ASP). */
 function _drawAspReference(ctx,m,scale,userGeoJSON){
   if(!S.aspGJ||!S.aspGJ.features)return;
@@ -4972,6 +5008,26 @@ function _drawNorthArrow(ctx,w,h,scale){
    espacial representado se describe con su swatch correcto). */
 const PREDIO_LEGEND_ITEM={label:'Predio analizado',color:'#f7d04a',outline:true};
 const ASP_REF_LEGEND_ITEM={label:'Áreas Silvestres Protegidas (límite)',color:'#000000',hatch:true};
+const MASK_LEGEND_ITEM={label:MASK_LEGEND_LABEL,color:'#000000',outline:true};
+/* ¿El perímetro del área cubierta cruza la vista? Si el encuadre queda por
+   completo dentro (o fuera) del área, la línea punteada no se ve y el ítem
+   se omite de la simbología del mapa del informe. */
+function maskOutlineInView(bounds){
+  if(!bounds||!bounds.isValid||!bounds.isValid())return true;
+  try{
+    const vb=turf.bboxPolygon([bounds.getWest(),bounds.getSouth(),bounds.getEast(),bounds.getNorth()]);
+    const g=COVERAGE_MASK_GJ.geometry;
+    const polys=g.type==='Polygon'?[g.coordinates]:g.coordinates;
+    const lines={type:'Feature',properties:{},geometry:{type:'MultiLineString',coordinates:polys.flatMap(p=>p)}};
+    return !!turf.booleanIntersects(vb,lines);
+  }catch(e){return true;}
+}
+/* Ítem de simbología del límite, condicionado a la vista (mapa o bounds). */
+function maskLegendItems(mOrBounds){
+  let b=null;
+  try{b=(mOrBounds&&typeof mOrBounds.getBounds==='function')?mOrBounds.getBounds():mOrBounds;}catch(e){b=null;}
+  return maskOutlineInView(b)?[MASK_LEGEND_ITEM]:[];
+}
 /* Simbología categorizada de ASP (nombre + color). Si se pasa el mapa, solo
    lista las que intersecan la vista para describir lo realmente representado. */
 function aspLegendItems(m){
@@ -5039,9 +5095,9 @@ function legendItemsForReportMap(cfg,bounds){
     {label:'Dibujo del plano',color:'#000000',line:true},
     {label:'Predio de análisis',color:PREDIO_LINE,outline:true},
     ASP_REF_LEGEND_ITEM
-  ];
+  ].concat(maskLegendItems(bounds));
   if(!cfg.coverageKey)return [];
-  return coverageClassesInView(cfg.coverageKey,bounds).map(cls=>({label:cls,color:getColor(cfg.coverageKey,cls)})).concat([ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM]);
+  return coverageClassesInView(cfg.coverageKey,bounds).map(cls=>({label:cls,color:getColor(cfg.coverageKey,cls)})).concat([ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM]).concat(maskLegendItems(bounds));
 }
 
 function orthoDateLabel(key){
@@ -5221,7 +5277,7 @@ async function captureMapImage(cfg,userGeoJSON,bounds,w,h){
   // Vectores sobre la imagen
   if(cfg.coverageKey)_drawCobertura(ctx,m,S.gjd[cfg.coverageKey],cfg.coverageKey,1,0.48);
   if(cfg.pdfPlan&&S.pdfPlanData)await _drawPdfPlan(ctx,m,S.pdfPlanData,1);
-  _drawAspReference(ctx,m,1,userGeoJSON);
+  _drawAspReference(ctx,m,1,userGeoJSON);_drawCoverageMask(ctx,m,1);
   _drawCoordGrid(ctx,m,w,h,1);
   _drawUser(ctx,m,userGeoJSON,1);
   const viewBounds=m.getBounds();
@@ -5245,7 +5301,7 @@ async function captureMapImage(cfg,userGeoJSON,bounds,w,h){
     normalizeImageryCanvas(x2,w,h);
     if(cfg.coverageKey)_drawCobertura(x2,m,S.gjd[cfg.coverageKey],cfg.coverageKey,1,0.65);
     if(cfg.pdfPlan&&S.pdfPlanData)await _drawPdfPlan(x2,m,S.pdfPlanData,1);
-    _drawAspReference(x2,m,1,userGeoJSON);
+    _drawAspReference(x2,m,1,userGeoJSON);_drawCoverageMask(x2,m,1);
     _drawCoordGrid(x2,m,w,h,1);
     _drawUser(x2,m,userGeoJSON,1);
     _drawNorthArrow(x2,w,h,1);
@@ -5405,18 +5461,18 @@ async function captureAspMap(userGeoJSON,rows,zoom,w,h){
     // del ASP contenedor para denotar el sector donde se ubica el predio.
     const ctxB=contextBoundsFor(userGeoJSON,S.aspGJ);
     return await captureVectorMap(ctxB.bounds,ctxB.options,(ctx,m,s)=>{
-      _drawStyledPolys(ctx,m,S.aspGJ,styleFn,s);
+      _drawStyledPolys(ctx,m,S.aspGJ,styleFn,s);_drawCoverageMask(ctx,m,s);
       _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
       _drawPredioMarker(ctx,m,userGeoJSON,s);
-      _drawLegend(ctx,aspLegendItems(m).concat([PREDIO_LEGEND_ITEM]),w,h,s,'Áreas Silvestres Protegidas');
+      _drawLegend(ctx,aspLegendItems(m).concat([PREDIO_LEGEND_ITEM]).concat(maskLegendItems(m)),w,h,s,'Áreas Silvestres Protegidas');
     },w,h,FUENTES.asp);
   }
   const bounds=_extendWithPredio(boundsFromGeoJSON(S.aspGJ),userGeoJSON);
   return await captureImageryMap(bounds,{padding:[12,12]},(ctx,m,s)=>{
-    _drawStyledPolys(ctx,m,S.aspGJ,styleFn,s);
+    _drawStyledPolys(ctx,m,S.aspGJ,styleFn,s);_drawCoverageMask(ctx,m,s);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',2);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
-    _drawLegend(ctx,aspLegendItems(m).concat([PREDIO_LEGEND_ITEM]),w,h,s,'Áreas Silvestres Protegidas');
+    _drawLegend(ctx,aspLegendItems(m).concat([PREDIO_LEGEND_ITEM]).concat(maskLegendItems(m)),w,h,s,'Áreas Silvestres Protegidas');
   },w,h,FUENTES.esri+' · '+FUENTES.asp);
 }
 async function capturePneMap(cfg,userGeoJSON,w,h){
@@ -5424,13 +5480,13 @@ async function capturePneMap(cfg,userGeoJSON,w,h){
   const ctxB=contextBoundsFor(userGeoJSON,gj);
   return await captureVectorMap(ctxB.bounds,ctxB.options,(ctx,m,s)=>{
     if(gj)_drawStyledPolys(ctx,m,gj,()=>({color:cfg.color,fillColor:cfg.color,fillOpacity:0.32,weight:1.3,opacity:0.95}),s);
-    _drawAspReference(ctx,m,s,userGeoJSON);
+    _drawAspReference(ctx,m,s,userGeoJSON);_drawCoverageMask(ctx,m,s);
     _drawFincaLabels(ctx,m,cfg,s,userGeoJSON);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
     const _pneItems=[{label:cfg.label,color:cfg.color}];
     if(cfg.type==='finca')_pneItems.push({label:'N.° de finca y plano (rótulo)',color:cfg.color,outline:true});
-    _pneItems.push(ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM);
+    _pneItems.push(ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM,...maskLegendItems(m));
     _drawLegend(ctx,_pneItems,w,h,s,'Simbología');
   },w,h,pneFuente(cfg.id));
 }
@@ -5457,10 +5513,10 @@ async function captureTerrainMap(kind,userGeoJSON,w,h){
       // El relleno y el ráster cubren la grilla base; se redibuja encima para
       // que la grilla de coordenadas CRTM05 quede visible sobre el relieve.
       _drawCoordGrid(ctx,m,w,h,s);
-      _drawAspReference(ctx,m,s,userGeoJSON);
+      _drawAspReference(ctx,m,s,userGeoJSON);_drawCoverageMask(ctx,m,s);
       _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
       _drawPredioMarker(ctx,m,userGeoJSON,s);
-      _drawLegend(ctx,reliefLegend.concat([ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM]),w,h,s,'Clases de pendiente (relieve · % de pendiente)');
+      _drawLegend(ctx,reliefLegend.concat([ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM]).concat(maskLegendItems(m)),w,h,s,'Clases de pendiente (relieve · % de pendiente)');
     },w,h,FUENTES.relieve);
   }
   if(kind==='humedales'){
@@ -5468,20 +5524,20 @@ async function captureTerrainMap(kind,userGeoJSON,w,h){
     const cb=contextBoundsFor(userGeoJSON,ghj);
     return await captureVectorMap(cb.bounds,cb.options,(ctx,m,s)=>{
       _drawStyledPolys(ctx,m,ghj,()=>terrainHumedalesStyle(true),s);
-      _drawAspReference(ctx,m,s,userGeoJSON);
+      _drawAspReference(ctx,m,s,userGeoJSON);_drawCoverageMask(ctx,m,s);
       _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
       _drawPredioMarker(ctx,m,userGeoJSON,s);
-      _drawLegend(ctx,[{label:'Humedal',color:'#17a2b8'},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM],w,h,s,'Simbología');
+      _drawLegend(ctx,[{label:'Humedal',color:'#17a2b8'},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM].concat(maskLegendItems(m)),w,h,s,'Simbología');
     },w,h,FUENTES.humedales);
   }
   const gj=await loadTerrainFloodData();
   const ctxB=contextBoundsFor(userGeoJSON,gj);
   return await captureVectorMap(ctxB.bounds,ctxB.options,(ctx,m,s)=>{
     _drawStyledPolys(ctx,m,gj,()=>terrainFloodStyle(true),s);
-    _drawAspReference(ctx,m,s,userGeoJSON);
+    _drawAspReference(ctx,m,s,userGeoJSON);_drawCoverageMask(ctx,m,s);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
-    _drawLegend(ctx,[{label:'Potencial de inundación',color:'#2b8cc4'},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM],w,h,s,'Simbología');
+    _drawLegend(ctx,[{label:'Potencial de inundación',color:'#2b8cc4'},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM].concat(maskLegendItems(m)),w,h,s,'Simbología');
   },w,h,FUENTES.inundacion);
 }
 async function captureFuentesMap(userGeoJSON,w,h){
@@ -5490,11 +5546,11 @@ async function captureFuentesMap(userGeoJSON,w,h){
   const b=boundsFromGeoJSON(userGeoJSON);
   return await captureImageryMap(b,{padding:[8,8],maxZoom:18},(ctx,m,s)=>{
     if(S.fuentes.causeGJ)_drawLines(ctx,m,S.fuentes.causeGJ,'#1f74c0',2,s);
-    _drawAspReference(ctx,m,s,userGeoJSON);
+    _drawAspReference(ctx,m,s,userGeoJSON);_drawCoverageMask(ctx,m,s);
     _drawDictLabels(ctx,m,s,userGeoJSON);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
-    _drawLegend(ctx,[{label:'Cauce y drenaje',color:'#1f74c0',line:true},{label:'Dictámenes DA (punto)',color:'#e83e8c',point:true},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM],w,h,s,'Simbología');
+    _drawLegend(ctx,[{label:'Cauce y drenaje',color:'#1f74c0',line:true},{label:'Dictámenes DA (punto)',color:'#e83e8c',point:true},ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM].concat(maskLegendItems(m)),w,h,s,'Simbología');
   },w,h,FUENTES.cauce+' · Dictámenes WFS — Dirección de Agua (DA, SNIT)',dict.map(l=>({url:DA_WMS_BASE,layers:l.name})),{noImagery:true});
 }
 /* Dibujo del predio para el Word: acercamiento máximo al polígono cargado y, si
@@ -5510,9 +5566,10 @@ async function captureFuentesDrawMap(userGeoJSON,w,h){
   }
   return await captureVectorMap(fb,{padding:[10,10],maxZoom:19},(ctx,m,s)=>{
     if(pimg)_drawPdfPlanImg(ctx,m,S.pdfPlanData,pimg,s);
+    _drawCoverageMask(ctx,m,s);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#8a6d00','rgba(247,208,74,0.18)',3);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
-    const items=[PREDIO_LEGEND_ITEM];
+    const items=[PREDIO_LEGEND_ITEM].concat(maskLegendItems(m));
     if(pimg)items.push({label:'Dibujo del plano',color:'#000000',line:true});
     _drawLegend(ctx,items,w,h,s,'Dibujo del predio');
   },w,h,'Dibujo del predio — geometría del polígono cargado'+(S.pdfName?' y plano: '+S.pdfName:''));
