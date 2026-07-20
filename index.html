@@ -741,7 +741,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-07-20-importar-plano-v40';
+const APP_VERSION='2026-07-20-importar-plano-v41';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -5997,6 +5997,26 @@ PI.parseNumber=function(v){
   return isFinite(n)?(neg?-n:n):NaN;
 };
 
+/* Parser específico para coordenadas Este/Norte. A diferencia de parseNumber,
+   resuelve el separador único ambiguo por magnitud: un único separador con
+   exactamente 3 dígitos finales cuya lectura decimal supera 180 (imposible como
+   coordenada geográfica) se interpreta como separador de MILES (512.345 →
+   512345), evitando colocar el predio a cientos de km; si la lectura decimal es
+   plausible como geográfica (≤180, p. ej. 9.555 o -83.750) se conserva decimal.
+   El resto delega en parseNumber (miles con ≥2 separadores, coma/punto, etc.). */
+PI.parseCoord=function(v){
+  if(typeof v==='number')return v;
+  if(v==null)return NaN;
+  var s=String(v).trim().replace(/\s+/g,'');
+  var m=s.match(/^(-?)(\d+)[.,](\d{3})$/);   // un único separador, exactamente 3 finales
+  if(m){
+    var dec=parseFloat(m[1]+m[2]+'.'+m[3]);
+    if(Math.abs(dec)>180)return parseInt(m[1]+m[2]+m[3],10);   // miles → coordenada proyectada
+    return dec;                                                 // plausible geográfica → decimal
+  }
+  return PI.parseNumber(v);
+};
+
 /* Grados decimales desde G/M/S o decimal (magnitud, sin signo de cuadrante). */
 PI.parseDMS=function(v){
   if(v==null)return NaN;
@@ -6033,6 +6053,25 @@ PI.parseBearing=function(v){
   var a=PI.parseDMS(up.replace(/[NSEWOº°'"´’″]/g,' '));
   if(isFinite(a)&&a>=0&&a<=360){ return {azimuth:(a%360),kind:'azimut',raw:s}; }
   return null;   // fuera de [0,360] o inválido
+};
+
+/* Separa una línea de derrotero en {dir, dist}, extrayendo SIEMPRE la distancia
+   final antes de interpretar la dirección — así la distancia no se lee como
+   minutos/segundos del rumbo (p. ej. «123.5 50» → dir «123.5», dist 50, no un
+   azimut 124.33°). Rumbo de cuadrante: distancia = número final tras la letra;
+   azimut numérico: primer número = azimut, último = distancia (si hay ≥2). */
+PI.splitLeg=function(line){
+  var ln=String(line==null?'':line).trim(), dist=NaN, dir=ln;
+  if(/[NS].*[EWO]/i.test(ln)){
+    var dm=ln.match(/([\d][\d.,]*)\s*(m|mts|mtrs|metros)?\s*$/i);
+    if(dm){dist=PI.parseNumber(dm[1]);dir=ln.slice(0,dm.index).trim();}
+  }else{
+    var nums=ln.match(/-?\d[\d.,]*/g)||[];
+    if(nums.length>=2){dir=nums[0];dist=PI.parseNumber(nums[nums.length-1]);}
+    else if(nums.length===1){dir=nums[0];}
+    else return {dir:ln,dist:NaN};
+  }
+  return {dir:dir,dist:isFinite(dist)?dist:NaN};
 };
 
 PI.centroid=function(ring){
@@ -6611,11 +6650,11 @@ function piParseOCR(text,type,data){
     });
   }else{
     lines.forEach(function(ln,i){
-      var b=PI.parseBearing(ln);
-      var dm=ln.match(/(\d[\d.,]*)\s*(m|mts|metros)?\s*$/i);
-      var dist=dm?PI.parseNumber(dm[1]):NaN;
-      if(!b&&!isFinite(dist))return;
-      rows.push({line:rows.length+1,dir:b?b.raw:ln,dist:isFinite(dist)?dist:''});
+      // Separa la distancia final antes de parsear la dirección (PI.splitLeg).
+      var leg=PI.splitLeg(ln);
+      var b=PI.parseBearing(leg.dir);
+      if(!b&&!isFinite(leg.dist))return;
+      rows.push({line:rows.length+1,dir:leg.dir,dist:isFinite(leg.dist)?leg.dist:''});
       conf.push({dir:wordsByLine[i]||70,dist:wordsByLine[i]||70});
     });
   }
@@ -6637,7 +6676,7 @@ function piRenderTable(body){
 }
 function piFillTable(){
   var st=S.plano,isC=st.extractType==='coords',tb=document.getElementById('pi-tbody');if(!tb)return;
-  var flags=isC?PI.validateCoords(st.rows.map(function(r){return {e:PI.parseNumber(r.e),n:PI.parseNumber(r.n)};})):[];
+  var flags=isC?PI.validateCoords(st.rows.map(function(r){return {e:PI.parseCoord(r.e),n:PI.parseCoord(r.n)};})):[];
   tb.innerHTML=st.rows.map(function(r,i){
     var cf=st.confRows[i]||{};
     // Marcado de celdas dudosas por tipo
@@ -6667,7 +6706,7 @@ function piTableMsg(){
   var st=S.plano,isC=st.extractType==='coords',msg=document.getElementById('pi-tbl-msg');if(!msg)return;
   var n=0,warns=[];
   if(isC){
-    var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];});
+    var pts=st.rows.map(function(r){return [PI.parseCoord(r.e),PI.parseCoord(r.n)];});
     n=pts.filter(function(p){return isFinite(p[0])&&isFinite(p[1]);}).length;
     if(PI.likelySwappedEN(pts))warns.push('posible intercambio Este/Norte (¿columnas invertidas?)');
   }else{
@@ -6684,7 +6723,7 @@ function piTableMsg(){
 function piCommitTable(){
   var st=S.plano,isC=st.extractType==='coords';
   if(isC){
-    var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
+    var pts=st.rows.map(function(r){return [PI.parseCoord(r.e),PI.parseCoord(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
     if(pts.length<3){piToast('Se requieren al menos 3 vértices válidos.',true,3500);return false;}
   }else{
     var legs=st.rows.map(function(r){var b=PI.parseBearing(r.dir);return b?{azimuth:b.azimuth,distance:PI.parseNumber(r.dist)}:null;}).filter(function(l){return l&&isFinite(l.distance)&&l.distance>0;});
@@ -6698,7 +6737,7 @@ function piRenderBuild(body){
   var st=S.plano,isC=st.extractType==='coords';
   var crsSel='';
   if(isC){
-    var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
+    var pts=st.rows.map(function(r){return [PI.parseCoord(r.e),PI.parseCoord(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
     st.crsInfo=PI.classifyCRS(pts,st.ocrText);
     var needs=st.crsInfo.needsUser;
     if(!needs){ st.crs=st.crsInfo.best; st.crsConfirmed=true; }   // evidencia suficiente
@@ -6723,7 +6762,7 @@ function piDoBuild(){
   try{
     var ringM, build;
     if(isC){
-      var pts=st.rows.map(function(r){return [PI.parseNumber(r.e),PI.parseNumber(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
+      var pts=st.rows.map(function(r){return [PI.parseCoord(r.e),PI.parseCoord(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
       var b=PI.buildFromCoords(pts);st.srcRing=b.vertices.slice();
       // a metros CRTM05 para el marco de trabajo
       if(st.crs==='EPSG:5367')ringM=b.vertices.map(function(p){return [p[0],p[1]];});
@@ -6852,7 +6891,7 @@ function piApplyAmarre(){
   var st=S.plano;
   var vi=+document.getElementById('pi-am-v').value;
   var crs=document.getElementById('pi-am-crs').value;
-  var e=PI.parseNumber(document.getElementById('pi-am-e').value), n=PI.parseNumber(document.getElementById('pi-am-n').value);
+  var e=PI.parseCoord(document.getElementById('pi-am-e').value), n=PI.parseCoord(document.getElementById('pi-am-n').value);
   if(!isFinite(e)||!isFinite(n)){piToast('Introduzca coordenadas válidas.',true,3000);return;}
   var tgt=crs==='EPSG:5367'?[e,n]:proj4(crs,'EPSG:5367',[e,n]);
   var v=st.workRingM[vi];
@@ -6877,7 +6916,7 @@ function piGridPrompt(x,y){
   var st=S.plano, crsLabel=st.gridCrs;
   var e=prompt('Este/X ('+crsLabel+') de la intersección marcada:');if(e==null)return;
   var n=prompt('Norte/Y ('+crsLabel+') de la intersección marcada:');if(n==null)return;
-  var ev=PI.parseNumber(e),nv=PI.parseNumber(n);if(!isFinite(ev)||!isFinite(nv)){piToast('Coordenadas inválidas.',true,2500);return;}
+  var ev=PI.parseCoord(e),nv=PI.parseCoord(n);if(!isFinite(ev)||!isFinite(nv)){piToast('Coordenadas inválidas.',true,2500);return;}
   st.gridPts.push({px:x,py:y,e:ev,n:nv});piGridCompute();piGridRefresh();
 }
 /* Georreferencia por similitud: pixel → coordenadas de la cuadrícula (CRS elegido)

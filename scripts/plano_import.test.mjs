@@ -71,6 +71,19 @@ t('azimut 400 fuera de rango → null', () => assert(PI.parseBearing('400') === 
 t('intercambio E/N detectado (E≈1e6 > N)', () => assert(PI.likelySwappedEN([[1050000, 512000], [1050100, 512100]]) === true));
 t('orden correcto no marca intercambio', () => assert(PI.likelySwappedEN([[512000, 1050000], [512100, 1050100]]) === false));
 
+console.log('1d) parseCoord — separador de miles único en coordenadas (P1 revisión)');
+t('512.345 → 512345 (miles, proyectada)', () => assert(PI.parseCoord('512.345') === 512345));
+t('1.050.000 → 1050000', () => assert(PI.parseCoord('1.050.000') === 1050000));
+t('9.555 → 9.555 (geográfica decimal)', () => assert(near(PI.parseCoord('9.555'), 9.555)));
+t('-83.750 → -83.75 (geográfica decimal)', () => assert(near(PI.parseCoord('-83.750'), -83.75)));
+t('512345,67 → 512345.67', () => assert(near(PI.parseCoord('512345,67'), 512345.67)));
+t('E 512.345 / N 1.050.000 consistentes (no a 100s de km)', () => { const e = PI.parseCoord('512.345'), n = PI.parseCoord('1.050.000'); assert(e === 512345 && n === 1050000); });
+
+console.log('1e) splitLeg — separa la distancia antes del rumbo (P1 revisión)');
+t('«123.5 50» → azimut 123.5 y dist 50 (no 124.33°)', () => { const l = PI.splitLeg('123.5 50'); assert(l.dir === '123.5' && l.dist === 50 && near(PI.parseBearing(l.dir).azimuth, 123.5)); });
+t('«N 14° 00\' W 50» → N14W y dist 50', () => { const l = PI.splitLeg('N 14° 00\' W 50'); assert(near(PI.parseBearing(l.dir).azimuth, 346) && l.dist === 50); });
+t('«N14°00\'O» sin distancia', () => { const l = PI.splitLeg('N14°00\'O'); assert(near(PI.parseBearing(l.dir).azimuth, 346) && Number.isNaN(l.dist)); });
+
 console.log('1c) Similitud desde pares (georreferencia de cuadrícula)');
 t('2 pares: pixel→mundo exacto, escala 1', () => {
   const T = PI.similarityFromPairs([{ src: [0, 0], dst: [500000, 1000000] }, { src: [100, 0], dst: [500100, 1000000] }]);
