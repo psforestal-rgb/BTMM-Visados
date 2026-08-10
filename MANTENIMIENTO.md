@@ -48,6 +48,15 @@ navegadores tomen la versión nueva: subir `APP_VERSION` en `index.html` **y**
 `gen_v3.py`, y `version` en `version.json` (los tres deben coincidir;
 `check_consistency.py` lo verifica y el CI bloquea si difieren).
 
+**Convención de versión (obligatoria): fecha de la última actualización.** El
+string de versión tiene el formato `AAAA-MM-DD-<slug>-v<N>`, donde `AAAA-MM-DD`
+es **la fecha real en que se hace la actualización** (no una fecha heredada) y
+`<N>` es un contador que aumenta en cada publicación. En `version.json`, el
+campo `updated` debe llevar esa misma fecha. `check_consistency.py` verifica que
+la fecha del string de versión coincida con `updated` (el CI bloquea si no).
+Ejemplo: una actualización hecha el 10 de agosto de 2026 usa
+`2026-08-10-<slug>-v<N>` y `"updated": "2026-08-10T..."`.
+
 ## Rollback
 
 ```bash
