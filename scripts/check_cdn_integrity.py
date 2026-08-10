@@ -11,17 +11,25 @@ También comprueba disponibilidad (solo estado HTTP) de los recursos sin SRI
 posible: sql-wasm.wasm y pdf.worker.min.js, y de los servicios externos
 críticos (proxy OGC, SNIT, Dirección de Agua).
 
+Además consulta OSV.dev (base de datos abierta de vulnerabilidades) por cada
+paquete npm fijado en su versión exacta: detecta si se publica una CVE nueva
+contra una versión que ya está pinneada en el visor (algo que el SRI, por
+diseño, nunca detectaría: el SRI solo garantiza que el CDN sirve los mismos
+bytes que se fijaron, no que esos bytes sigan siendo seguros con el tiempo).
+
 Uso:
   python3 scripts/check_cdn_integrity.py             # red real (CI)
   python3 scripts/check_cdn_integrity.py --local-map DIR  # pruebas sin red:
-      sirve cada URL desde DIR/<ruta-codificada> en lugar de descargarla.
+      sirve cada URL desde DIR/<ruta-codificada> en lugar de descargarla;
+      también omite el sondeo de servicios y la consulta a OSV.dev.
 
-Sale con código 1 si alguna verificación de integridad falla; los sondeos de
-disponibilidad de servicios solo se reportan (código 2 si únicamente fallan
-sondeos), para distinguir rotura de contrato de caída transitoria.
+Sale con código 1 si alguna verificación de integridad falla; código 3 si la
+integridad está OK pero hay CVEs conocidas contra alguna versión fijada;
+código 2 si solo fallan sondeos de disponibilidad (posible caída transitoria).
 """
 import base64
 import hashlib
+import json
 import os
 import re
 import sys
@@ -29,6 +37,7 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TIMEOUT = 30
+OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"
 
 # Recursos que se cargan en runtime sin SRI posible (worker / wasm):
 # solo se sondea disponibilidad. Mantener alineado con index.html.
@@ -72,6 +81,37 @@ def descargar(url, local_map):
 
 def sha384_b64(data):
     return "sha384-" + base64.b64encode(hashlib.sha384(data).digest()).decode()
+
+
+def extraer_paquetes_npm(html):
+    """{(nombre, version)} de cada paquete npm servido por jsDelivr en index.html
+    (etiquetas estáticas, loadScriptOnce y rutas construidas en JS como
+    corePath/langPath). Se extrae de las URLs, no de una lista mantenida a
+    mano, para no desincronizarse cuando cambian las versiones fijadas."""
+    paquetes = set()
+    for m in re.finditer(r"cdn\.jsdelivr\.net/npm/((?:@[^/]+/)?[^/@]+)@([0-9][^/'\"]*)/", html):
+        paquetes.add((m.group(1), m.group(2)))
+    return sorted(paquetes)
+
+
+def consultar_osv(paquetes):
+    """Consulta OSV.dev (https://osv.dev) por vulnerabilidades conocidas contra
+    cada (paquete, versión) exacto fijado. Devuelve {(paquete,version): [ids]}
+    solo para los que tengan alguna vulnerabilidad reportada."""
+    consultas = [{"package": {"name": nombre, "ecosystem": "npm"}, "version": version}
+                 for nombre, version in paquetes]
+    body = json.dumps({"queries": consultas}).encode()
+    req = urllib.request.Request(
+        OSV_BATCH_URL, data=body, method="POST",
+        headers={"Content-Type": "application/json", "User-Agent": "btmm-visados-ci"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        resultados = json.loads(r.read())["results"]
+    afectados = {}
+    for (nombre, version), resultado in zip(paquetes, resultados):
+        ids = [v["id"] for v in resultado.get("vulns", [])]
+        if ids:
+            afectados[(nombre, version)] = ids
+    return afectados
 
 
 def main():
@@ -122,14 +162,32 @@ def main():
                 print(f"  ⚠️  {nombre} — {type(e).__name__}: {e}")
                 fallos_sondeo.append(nombre)
 
+    fallos_cve = {}
+    if not local_map:
+        paquetes = extraer_paquetes_npm(html)
+        print(f"\nCVEs conocidas (OSV.dev) contra {len(paquetes)} paquete(s) npm fijados:")
+        try:
+            fallos_cve = consultar_osv(paquetes)
+            if fallos_cve:
+                for (nombre, version), ids in fallos_cve.items():
+                    print(f"  ❌ {nombre}@{version}: {', '.join(ids)}")
+            else:
+                print(f"  ✅ sin CVEs reportadas contra las {len(paquetes)} versiones exactas fijadas")
+        except Exception as e:
+            print(f"  ⚠️  No se pudo consultar OSV.dev — {type(e).__name__}: {e}")
+            fallos_sondeo.append("OSV.dev")
+
     print()
     if fallos_integridad:
         print(f"RESULTADO: {len(fallos_integridad)} fallo(s) de integridad/contrato")
         sys.exit(1)
+    if fallos_cve:
+        print(f"RESULTADO: integridad OK; {len(fallos_cve)} paquete(s) con CVE conocida en su versión fijada")
+        sys.exit(3)
     if fallos_sondeo:
         print(f"RESULTADO: integridad OK; {len(fallos_sondeo)} servicio(s) no disponibles (posible caída transitoria)")
         sys.exit(2)
-    print("RESULTADO: contrato con CDN y servicios externos OK")
+    print("RESULTADO: contrato con CDN, CVEs y servicios externos OK")
 
 
 if __name__ == "__main__":

@@ -115,6 +115,38 @@ def main():
         else:
             fallo(f"Colector de errores ausente o incompleto en {f}")
 
+    print("8) Plantilla de capas de gen_v3.py sigue siendo una plantilla")
+    marcadores = ["{{FN2000}}", "{{FN2005}}", "{{CF2021}}", "{{CF2023}}", "{{TB2012}}"]
+    # Los marcadores también aparecen, inevitablemente, como argumento del propio
+    # HTML.replace(...) y en los autochequeos de más abajo: buscarlos en todo el
+    # archivo siempre "encuentra" algo y no detecta el bug real (datos ya resueltos
+    # horneados en el cuerpo de la plantilla). Hay que aislar el cuerpo de la
+    # plantilla (todo lo anterior a la línea que hace el reemplazo) y buscar ahí.
+    marca_fin_plantilla = '\nHTML = HTML.replace("{{CF2021}}"'
+    if marca_fin_plantilla not in gen:
+        fallo("No se encontró el límite esperado de la plantilla HTML en gen_v3.py (¿cambió el mecanismo de reemplazo?)")
+        faltantes = marcadores
+    else:
+        cuerpo_plantilla = gen[:gen.index(marca_fin_plantilla)]
+        faltantes = [m for m in marcadores if m not in cuerpo_plantilla]
+    if faltantes:
+        fallo(
+            "gen_v3.py ya no contiene el(los) marcador(es) "
+            f"{faltantes}: el .replace() correspondiente sería un no-op y "
+            "la regeneración dejaría datos de capa obsoletos sin avisar "
+            "(revisar que nadie haya pegado HTML ya renderizado sobre la plantilla)"
+        )
+    else:
+        ok(f"{len(marcadores)} marcador(es) de capa presentes y sustituibles")
+    if "/mnt/user-data/outputs/" in gen or "/home/claude/" in gen:
+        fallo(
+            "gen_v3.py conserva una ruta de entorno de análisis hardcodeada "
+            "(/mnt/user-data/outputs/ o /home/claude/); debe escribir junto "
+            "al script salvo que se indique GEN_OUTPUT_PATH/LAYERS_B64_PATH"
+        )
+    else:
+        ok("Sin rutas hardcodeadas de entorno de análisis")
+
     print()
     if FALLOS:
         print(f"RESULTADO: {len(FALLOS)} fallo(s)")
