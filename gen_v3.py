@@ -765,7 +765,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-07-20-importar-plano-v41';
+const APP_VERSION='2026-08-10-importar-plano-v42';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.

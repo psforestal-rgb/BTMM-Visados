@@ -41,7 +41,8 @@ def main():
     gen = leer("gen_v3.py")
 
     print("1) Sincronización de versiones")
-    ver_json = json.loads(leer("version.json"))["version"]
+    ver_data = json.loads(leer("version.json"))
+    ver_json = ver_data["version"]
     m_html = re.search(r"const APP_VERSION='([^']+)'", html)
     m_gen = re.search(r"const APP_VERSION='([^']+)'", gen)
     if not (m_html and m_gen):
@@ -50,6 +51,18 @@ def main():
         ok(f"Versión única: {ver_json}")
     else:
         fallo(f"Versiones distintas: html={m_html.group(1)} gen={m_gen.group(1)} json={ver_json}")
+
+    # Convención: el string de versión comienza con la FECHA de la última
+    # actualización (AAAA-MM-DD) y debe coincidir con el campo `updated` de
+    # version.json. Así cada publicación queda fechada de forma coherente.
+    m_fecha = re.match(r"(\d{4}-\d{2}-\d{2})", ver_json)
+    updated = str(ver_data.get("updated", ""))
+    if not m_fecha:
+        fallo(f"La versión '{ver_json}' no comienza con una fecha AAAA-MM-DD")
+    elif updated[:10] != m_fecha.group(1):
+        fallo(f"La fecha de la versión ({m_fecha.group(1)}) no coincide con 'updated' ({updated[:10]}) en version.json")
+    else:
+        ok(f"Fecha de última actualización coherente: {m_fecha.group(1)}")
 
     print("2) SRI en recursos externos")
     externos = re.findall(r'<(?:script|link)[^>]+(?:src|href)="(https://[^"]+)"[^>]*>', html)
