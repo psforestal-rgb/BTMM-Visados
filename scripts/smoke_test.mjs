@@ -179,7 +179,21 @@ const modalOk = await (async () => {
 })().catch(() => false);
 modalOk ? ok('modal de revisión muestra SHA-256 y confirma') : fallo('flujo del modal de revisión');
 
-console.log('7) Registro de errores runtime');
+console.log('7) Importar predio desde plano abre la vista previa');
+const planoPreviewOk = await (async () => {
+  const raw = `%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\nxref\n0 4\n0000000000 65535 f \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n0\n%%EOF`;
+  await page.click('button[onclick="openPlanoImport()"]');
+  await page.setInputFiles('#pi-fi', { name: 'plano_smoke.pdf', mimeType: 'application/pdf', buffer: Buffer.from(raw) });
+  await page.waitForSelector('#scan-modal #scan-ok', { timeout: 10000 });
+  await page.click('#scan-modal #scan-ok');
+  await page.waitForSelector('#pi-wiz.on #pi-cw canvas', { timeout: 30000 });
+  const dims = await page.$eval('#pi-wiz.on #pi-cw canvas', (c) => [c.width, c.height]);
+  await page.evaluate(() => piCloseWiz());
+  return dims[0] > 0 && dims[1] > 0;
+})().catch((e) => { notas.push('importador de plano: ' + String(e).slice(0, 160)); return false; });
+planoPreviewOk ? ok('PDF renderizado en el paso Preparar') : fallo('el asistente no mostró la vista previa del plano');
+
+console.log('8) Registro de errores runtime');
 const rep = await page.evaluate(() => window.btmmReporteErrores(false));
 rep && rep.herramienta === 'BTMM-Visados' ? ok(`reporte generado (${rep.totalErrores} errores registrados)`) : fallo('btmmReporteErrores no devolvió reporte');
 
