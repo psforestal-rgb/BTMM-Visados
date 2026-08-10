@@ -131,12 +131,13 @@ ortofoto tras 2 errores, mensajes por tarjeta). La caída de un servicio
   adjuntar al issue «Reporte de error». No se envía nada a ningún servidor.
 - **Issues automáticos:** el workflow semanal de vigilancia abre o actualiza
   **un único** issue etiquetado `vigilancia-automatica` cuando el contrato
-  SRI con el CDN se rompe (severidad alta) o un servicio externo no responde
-  (severidad media). Deduplica comentando en el issue abierto existente.
-  Se desactiva con la variable de repositorio `VIGILANCIA_ISSUES=off`.
-  Usa el `GITHUB_TOKEN` efímero del workflow con permiso mínimo
-  (`issues: write`); no hay tokens personales que configurar.
-- **Interpretación:** issue de integridad ⇒ actuar ya (sección «Cómo
+  SRI con el CDN se rompe (severidad alta), OSV.dev reporta una CVE conocida
+  contra la versión exacta de un paquete npm fijado (severidad alta) o un
+  servicio externo no responde (severidad media). Deduplica comentando en el
+  issue abierto existente. Se desactiva con la variable de repositorio
+  `VIGILANCIA_ISSUES=off`. Usa el `GITHUB_TOKEN` efímero del workflow con
+  permiso mínimo (`issues: write`); no hay tokens personales que configurar.
+- **Interpretación:** issue de integridad o de CVE ⇒ actuar ya (sección «Cómo
   actualizar una librería»); issue de servicio ⇒ verificar si es transitorio
   (reintentar el workflow con *Run workflow*) antes de tocar código.
 

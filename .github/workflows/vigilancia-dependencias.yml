@@ -1,7 +1,8 @@
 name: Vigilancia de dependencias externas
 
 # Prueba de contrato semanal: verifica que las librerías fijadas del CDN
-# sigan sirviendo exactamente los bytes esperados (SRI) y que los servicios
+# sigan sirviendo exactamente los bytes esperados (SRI), que no haya CVEs
+# nuevas (OSV.dev) contra alguna versión npm fijada, y que los servicios
 # externos (proxy OGC, SNIT, Dirección de Agua, Esri) respondan.
 # Si el contrato se rompe, abre o actualiza UN issue deduplicado con la
 # etiqueta `vigilancia-automatica` (nunca duplica: si ya hay uno abierto,
@@ -47,13 +48,23 @@ jobs:
             TITULO="Vigilancia: fallo de integridad en dependencias del CDN"
             SEVERIDAD="alta"
             ETIQUETAS="dependency,security,needs-review,vigilancia-automatica"
+            TIPO_EVENTO="dependencia vulnerable o alterada (contrato SRI roto)"
+            IMPACTO="el navegador bloqueará la librería afectada (SRI); el módulo que depende de ella dejará de funcionar hasta actualizar el hash o la versión fijada."
+          elif [ "$CODIGO" = "3" ]; then
+            TITULO="Vigilancia: CVE conocida contra una dependencia fijada"
+            SEVERIDAD="alta"
+            ETIQUETAS="dependency,security,needs-review,vigilancia-automatica"
+            TIPO_EVENTO="vulnerabilidad publicada (OSV.dev) contra la versión exacta de un paquete npm fijado"
+            IMPACTO="la librería sigue funcionando (el SRI no se rompe), pero la versión fijada tiene una vulnerabilidad conocida; evaluar si afecta al visor y actualizar la versión fijada si corresponde."
           else
             TITULO="Vigilancia: servicio externo no disponible"
             SEVERIDAD="media"
             ETIQUETAS="external-service,needs-review,vigilancia-automatica"
+            TIPO_EVENTO="caída de integración externa"
+            IMPACTO="las capas u ortofotos de ese servicio no cargarán; el resto del visor sigue operativo."
           fi
           CUERPO=$(cat <<EOF
-          **Tipo de evento:** $([ "$CODIGO" = "1" ] && echo "dependencia vulnerable o alterada (contrato SRI roto)" || echo "caída de integración externa")
+          **Tipo de evento:** $TIPO_EVENTO
           **Severidad:** $SEVERIDAD
           **Fecha y hora:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
           **Entorno:** producción (visor publicado en GitHub Pages)
@@ -66,7 +77,7 @@ jobs:
           $(tail -c 6000 resultado.txt)
           \`\`\`
 
-          **Impacto probable:** $([ "$CODIGO" = "1" ] && echo "el navegador bloqueará la librería afectada (SRI); el módulo que depende de ella dejará de funcionar hasta actualizar el hash o la versión fijada." || echo "las capas u ortofotos de ese servicio no cargarán; el resto del visor sigue operativo.")
+          **Impacto probable:** $IMPACTO
           **Propuesta inicial:** revisar MANTENIMIENTO.md, sección «Actualizar dependencias» / «Servicios externos».
           EOF
           )
