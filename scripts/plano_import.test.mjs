@@ -150,6 +150,20 @@ console.log('7) Clasificación de CRS');
 t('geográficas detectadas', () => assert.strictEqual(PI.classifyCRS([[-83.75, 9.55], [-83.74, 9.56]]).best, 'EPSG:4326'));
 t('CRTM05 por evidencia textual no exige usuario', () => { const c = PI.classifyCRS([[512000, 1050000], [512100, 1050100]], 'CRTM05 EPSG:5367'); assert(c.best === 'EPSG:5367' && !c.needsUser); });
 t('proyectadas sin evidencia exigen selección', () => assert(PI.classifyCRS([[512000, 1050000], [512100, 1050100]]).needsUser));
+t('CR-SIRGAS por texto → 8908', () => { const c = PI.classifyCRS([[512000, 1050000], [512100, 1050100]], 'CR-SIRGAS CRTM05'); assert(c.best === 'EPSG:8908' && !c.needsUser); });
+t('CRTM05 genérico → ambiguo 5367/8908 (exige confirmar)', () => { const c = PI.classifyCRS([[512000, 1050000], [512100, 1050100]], 'Coordenadas CRTM05'); const top2 = c.candidates.slice(0, 2).map(k => k.crs).sort(); assert(c.needsUser && c.ambiguous && top2[0] === 'EPSG:5367' && top2[1] === 'EPSG:8908'); });
+t('inCostaRica / crsPlacesInCR (geográficas)', () => { assert(PI.inCostaRica(-83.75, 9.55) === true && PI.inCostaRica(-70, 40) === false); assert(PI.crsPlacesInCR(-83.75, 9.55, 'EPSG:4326') === true); });
+t('contención geográfica penaliza el CRS que saca el predio del país', () => {
+  const prev = globalThis.proj4;
+  // proj4 simulado: 5367/8908 → CR; 32616 → fuera del país
+  globalThis.proj4 = (from, to, p) => (from === 'EPSG:32616' ? [-95, 20] : [-83.75, 9.55]);
+  try {
+    const c = PI.classifyCRS([[512000, 1050000], [512100, 1050100]]);
+    const utm = c.candidates.filter(k => k.crs === 'EPSG:32616')[0];
+    assert(utm && utm.inCR === false, 'UTM16 debería marcarse fuera de CR');
+    assert(c.best === 'EPSG:5367' || c.best === 'EPSG:8908', 'CRTM05 debería ganar: ' + c.best);
+  } finally { globalThis.proj4 = prev; }
+});
 
 console.log('8) Flujo mínimo: filas → polígono → FeatureCollection → área');
 t('coordenadas → polígono cerrado → área CRTM05 coherente', () => {
