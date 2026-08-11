@@ -127,6 +127,32 @@ t('coordenadas: elimina cierre duplicado', () => {
   assert(near(b.area, 10000));
 });
 
+console.log('4b) Miscerradura y compensación de referencia');
+const LEGS_BAD = [{ azimuth: 0, distance: 100 }, { azimuth: 90, distance: 100 }, { azimuth: 180, distance: 100 }, { azimuth: 270, distance: 99 }];
+t('diagnoseClosure cuantifica la miscerradura (1 m, 1:399)', () => {
+  const dg = PI.diagnoseClosure(LEGS_BAD, [0, 0]);
+  assert(near(dg.misAbs, 1), 'mis=' + dg.misAbs);
+  assert(near(dg.rel, 399, 1e-6), 'rel=' + dg.rel);
+});
+t('cuadrado perfecto: miscerradura ≈ 0', () => {
+  const dg = PI.diagnoseClosure([{ azimuth: 0, distance: 100 }, { azimuth: 90, distance: 100 }, { azimuth: 180, distance: 100 }, { azimuth: 270, distance: 100 }], [0, 0]);
+  assert(near(dg.misAbs, 0), 'mis=' + dg.misAbs);
+});
+t('compensateBowditch cierra y da área plausible', () => {
+  const c = PI.compensateBowditch(LEGS_BAD, [0, 0]);
+  assert.strictEqual(c.vertices.length, 4);
+  assert(Math.abs(c.area - 9950) < 200, 'área Bowditch=' + c.area);
+});
+t('compensateTransit devuelve polígono válido', () => {
+  const c = PI.compensateTransit(LEGS_BAD, [0, 0]);
+  assert.strictEqual(c.vertices.length, 4);
+  assert(c.area > 9000 && c.area < 11000, 'área Tránsito=' + c.area);
+});
+t('compensación no altera un cuadrado ya cerrado', () => {
+  const perfect = [{ azimuth: 0, distance: 100 }, { azimuth: 90, distance: 100 }, { azimuth: 180, distance: 100 }, { azimuth: 270, distance: 100 }];
+  assert(near(PI.compensateBowditch(perfect, [0, 0]).area, 10000, 1e-6));
+});
+
 console.log('5) Traslación y rotación sin alterar el área');
 t('rotar 37° + trasladar preserva área y perímetro', () => {
   const ring = [[0, 0], [100, 0], [100, 60], [0, 60]];

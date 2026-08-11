@@ -741,7 +741,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-10-crs-evidencias-v45';
+const APP_VERSION='2026-08-10-cierre-compensacion-v46';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6129,6 +6129,48 @@ PI.buildTraverse=function(legs, origin){
 
 /* Traslación + rotación rígida alrededor de un centro (por defecto el centroide).
    Preserva área y forma; no escala ni mueve vértices individuales. */
+/* Miscerradura de una poligonal (sin corregir). Devuelve el vector de cierre, su
+   magnitud y el cierre relativo. NOTA: el cierre por sí solo NO identifica de
+   forma fiable qué observación tiene el error (una miscerradura se explica igual
+   por un error de distancia en un lado o de rumbo en otro), por eso no se señala
+   una «línea culpable»: solo se cuantifica y se ofrece compensación de referencia. */
+PI.diagnoseClosure=function(legs, origin){
+  var o=origin||[0,0], x=o[0], y=o[1], per=0;
+  legs.forEach(function(l){
+    if(!isFinite(l.azimuth)||!isFinite(l.distance)||l.distance<=0)return;
+    var r=l.azimuth*Math.PI/180; x+=l.distance*Math.sin(r); y+=l.distance*Math.cos(r); per+=l.distance;
+  });
+  var mE=x-o[0], mN=y-o[1], mAbs=Math.hypot(mE,mN);
+  return {misE:mE, misN:mN, misAbs:mAbs, perimeter:per, rel:mAbs>1e-9?per/mAbs:Infinity};
+};
+/* Compensación por regla de la brújula (Bowditch): reparte el cierre en proporción
+   a la longitud de cada lado. Sugerencia de referencia; nunca se aplica sola. */
+PI.compensateBowditch=function(legs, origin){
+  var o=origin||[0,0], dg=PI.diagnoseClosure(legs,o), sumD=0;
+  legs.forEach(function(l){if(isFinite(l.distance)&&l.distance>0)sumD+=l.distance;});
+  var verts=[[o[0],o[1]]], x=o[0], y=o[1], acc=0;
+  legs.forEach(function(l){
+    if(!isFinite(l.azimuth)||!isFinite(l.distance)||l.distance<=0)return;
+    var r=l.azimuth*Math.PI/180; x+=l.distance*Math.sin(r); y+=l.distance*Math.cos(r); acc+=l.distance;
+    var f=sumD?acc/sumD:0; verts.push([x-dg.misE*f, y-dg.misN*f]);
+  });
+  verts=verts.slice(0,verts.length-1);
+  return {vertices:verts, area:PI.shoelaceArea(verts), perimeter:PI.perimeter(verts), metodo:'Bowditch'};
+};
+/* Compensación por regla del tránsito: reparte el cierre en proporción a |ΔE| y |ΔN|. */
+PI.compensateTransit=function(legs, origin){
+  var o=origin||[0,0], dg=PI.diagnoseClosure(legs,o), sE=0, sN=0;
+  legs.forEach(function(l){if(isFinite(l.azimuth)&&isFinite(l.distance)&&l.distance>0){var r=l.azimuth*Math.PI/180;sE+=Math.abs(l.distance*Math.sin(r));sN+=Math.abs(l.distance*Math.cos(r));}});
+  var verts=[[o[0],o[1]]], x=o[0], y=o[1], aE=0, aN=0;
+  legs.forEach(function(l){
+    if(!isFinite(l.azimuth)||!isFinite(l.distance)||l.distance<=0)return;
+    var r=l.azimuth*Math.PI/180, dE=l.distance*Math.sin(r), dN=l.distance*Math.cos(r);
+    x+=dE; y+=dN; aE+=Math.abs(dE); aN+=Math.abs(dN);
+    verts.push([x-dg.misE*(sE?aE/sE:0), y-dg.misN*(sN?aN/sN:0)]);
+  });
+  verts=verts.slice(0,verts.length-1);
+  return {vertices:verts, area:PI.shoelaceArea(verts), perimeter:PI.perimeter(verts), metodo:'Tránsito'};
+};
 PI.transform=function(ring, dx, dy, rotDeg, center){
   var c=center||PI.centroid(ring);
   var r=(rotDeg||0)*Math.PI/180, cos=Math.cos(r), sin=Math.sin(r);
@@ -6722,7 +6764,7 @@ function piParseOCR(text,type,data){
       var nums=ln.match(/-?\d[\d.,]*/g);
       if(!nums)return;
       // toma los dos últimos números como E,N (el primero suele ser el nº de punto)
-      var vals=nums.map(PI.parseNumber).filter(function(v){return isFinite(v);});
+      var vals=nums.map(PI.parseCoord).filter(function(v){return isFinite(v);});
       if(vals.length<2)return;
       var e,n,pt;
       if(vals.length>=3){pt=vals[0];e=vals[vals.length-2];n=vals[vals.length-1];}
@@ -6842,7 +6884,7 @@ function piCrsPick(v){var st=S.plano;if(!v)return;st.crs=v;st.crsConfirmed=true;
 function piDoBuild(){
   var st=S.plano,isC=st.extractType==='coords';
   try{
-    var ringM, build;
+    var ringM, build, legs=null;
     if(isC){
       var pts=st.rows.map(function(r){return [PI.parseCoord(r.e),PI.parseCoord(r.n)];}).filter(function(p){return isFinite(p[0])&&isFinite(p[1]);});
       var b=PI.buildFromCoords(pts);st.srcRing=b.vertices.slice();
@@ -6852,12 +6894,12 @@ function piDoBuild(){
       else ringM=b.vertices.map(function(p){return proj4(st.crs,'EPSG:5367',[p[0],p[1]]);});
       build={vertices:b.vertices,area:b.area,perimeter:b.perimeter,closureAbs:0,relClosure:Infinity,fromCoords:true};
     }else{
-      var legs=st.rows.map(function(r){var bb=PI.parseBearing(r.dir);return bb?{azimuth:bb.azimuth,distance:PI.parseNumber(r.dist)}:null;}).filter(function(l){return l&&isFinite(l.distance)&&l.distance>0;});
+      legs=st.rows.map(function(r){var bb=PI.parseBearing(r.dir);return bb?{azimuth:bb.azimuth,distance:PI.parseNumber(r.dist)}:null;}).filter(function(l){return l&&isFinite(l.distance)&&l.distance>0;});
       var tr=PI.buildTraverse(legs,[0,0]);st.srcRing=tr.vertices.slice();
       ringM=tr.vertices.map(function(p){return [p[0],p[1]];});   // metros locales
       build=tr;build.fromCoords=false;
     }
-    st.workRingM=ringM;st.build=build;st.adjust={dx:0,dy:0,rot:0};st.adjHist=[];
+    st.workRingM=ringM;st.build=build;st.legs=legs;st.adjust={dx:0,dy:0,rot:0};st.adjHist=[];
     piBuildStats();
   }catch(e){document.getElementById('pi-build-out').innerHTML='<div class="pi-note pi-err">No se pudo construir el polígono: '+piEsc(e.message)+'</div>';console.error(e);}
 }
@@ -6875,7 +6917,28 @@ function piBuildStats(){
     '<tr><th>Error de cierre</th><td>'+(b.fromCoords?'polígono cerrado por coordenadas':b.closureAbs.toFixed(3)+' m · relativo '+rel)+'</td></tr>'+
     (diff!=null?'<tr><th>Δ vs área del plano</th><td>'+(diff>=0?'+':'')+diff.toFixed(4)+' ha</td></tr>':'')+
     '</tbody></table>'+
-    (!b.fromCoords&&b.closureAbs>Math.max(0.5,per*0.01)?'<div class="pi-note pi-warn">El error de cierre supera 1:100. Revise distancias y rumbos (no se ajusta automáticamente).</div>':'');
+    piClosureExtraHTML(b,per);
+}
+/* Aviso de cierre + compensación de referencia (solo derroteros). El cierre no
+   identifica la observación culpable, así que no se acusa una línea concreta. */
+function piClosureExtraHTML(b,per){
+  var st=S.plano;
+  var html=(!b.fromCoords&&b.closureAbs>Math.max(0.5,per*0.01)?'<div class="pi-note pi-warn">El error de cierre supera 1:100. Revise distancias y rumbos (no se ajusta automáticamente).</div>':'');
+  if(!b.fromCoords&&st.legs&&st.legs.length>=3&&b.closureAbs>Math.max(0.05,per*0.0002)){
+    html+='<div class="pi-row"><span style="font-size:12px;color:#9db4d6">Compensación (solo referencia):</span>'+
+      '<button class="pi-tool" onclick="piShowCompensacion(\'bowditch\')">Bowditch</button>'+
+      '<button class="pi-tool" onclick="piShowCompensacion(\'transito\')">Tránsito</button>'+
+      '<span id="pi-comp-out" style="font-size:12px;color:#9db4d6"></span></div>'+
+      '<div class="pi-note">Las compensaciones distribuyen el cierre; son <b>orientativas y no se aplican</b> al polígono aceptado. El cierre no indica qué dato está mal: verifíquelo en la tabla.</div>';
+  }
+  return html;
+}
+function piShowCompensacion(metodo){
+  var st=S.plano; if(!st.legs)return;
+  var c=metodo==='transito'?PI.compensateTransit(st.legs,[0,0]):PI.compensateBowditch(st.legs,[0,0]);
+  var haOrig=PI.shoelaceArea(st.build.vertices)/10000, haC=c.area/10000;
+  var el=document.getElementById('pi-comp-out');
+  if(el)el.innerHTML=' · '+piEsc(c.metodo)+': área '+haC.toFixed(4)+' ha (Δ '+((haC-haOrig)>=0?'+':'')+(haC-haOrig).toFixed(4)+' ha), cierre ≈ 0 — solo referencia';
 }
 
 /* ── PASO: Verificación de forma (reutiliza detectPdfPredioBox) ── */
