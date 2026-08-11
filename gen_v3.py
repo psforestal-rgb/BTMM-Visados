@@ -765,7 +765,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-10-plano-pdf-nativo-v44';
+const APP_VERSION='2026-08-10-crs-evidencias-v45';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6172,10 +6172,28 @@ function median(arr){
 /* Clasifica el CRS de una lista de puntos proyectados/geográficos con evidencia
    textual opcional. Devuelve candidatos ordenados por confianza; el consumidor
    debe exigir confirmación del usuario cuando la confianza es baja. */
+// ¿El punto cae dentro de Costa Rica? (caja aproximada del país).
+PI.inCostaRica=function(lon,lat){return lon>=-86&&lon<=-82&&lat>=7.8&&lat<=11.6;};
+// Reproyecta el punto representativo según el CRS candidato y verifica contención
+// en Costa Rica. Devuelve true/false, o null si no se puede evaluar (sin proj4,
+// error, o valores no plausibles como lon/lat — p.ej. proj4 identidad en pruebas).
+PI.crsPlacesInCR=function(px,py,crs){
+  try{
+    var lon,lat;
+    if(crs==='EPSG:4326'){lon=px;lat=py;}
+    else{ if(!root.proj4)return null; var ll=root.proj4(crs,'EPSG:4326',[px,py]); lon=ll[0];lat=ll[1]; }
+    if(!isFinite(lon)||!isFinite(lat)||Math.abs(lon)>180||Math.abs(lat)>90)return null;
+    return PI.inCostaRica(lon,lat);
+  }catch(e){return null;}
+};
 PI.classifyCRS=function(points, text){
   text=(text||'').toUpperCase();
   var ev=[];
-  if(/CRTM ?05|EPSG:? ?5367|\b5367\b|CR ?05/.test(text))ev.push('EPSG:5367');
+  var hasSirgas=/SIRGAS|\b8908\b/.test(text);
+  var has05=/CR ?-? ?05|\b5367\b/.test(text);
+  var hasCRTM=/CRTM ?05/.test(text);
+  if(hasSirgas)ev.push('EPSG:8908');
+  if(has05)ev.push('EPSG:5367');
   if(/LAMBERT[^]*NORTE|NORTE[^]*LAMBERT/.test(text))ev.push('EPSG:5456');
   if(/LAMBERT[^]*SUR|SUR[^]*LAMBERT/.test(text))ev.push('EPSG:5457');
   if(/\bUTM\b/.test(text))ev.push(/17\s*[NP]|ZONA\s*17/.test(text)?'EPSG:32617':'EPSG:32616');
@@ -6185,27 +6203,44 @@ PI.classifyCRS=function(points, text){
   var mx=median(xs), my=median(ys), cands=[];
   if(mx<=180&&my<=90){
     cands.push({crs:'EPSG:4326',conf:0.9,label:'Geográficas WGS84 (lon/lat)'});
-  }else if(my>800000){                    // Norte ≈ 1·10⁶ → CRTM05 o UTM
-    cands.push({crs:'EPSG:5367',conf:0.5,label:'CRTM05 / EPSG:5367'});
+  }else if(my>800000){                    // Norte ≈ 1·10⁶ → CRTM05 (CR05/CR-SIRGAS) o UTM
+    cands.push({crs:'EPSG:5367',conf:0.5,label:'CR05 / CRTM05 (EPSG:5367)'});
+    cands.push({crs:'EPSG:8908',conf:0.48,label:'CR-SIRGAS / CRTM05 (EPSG:8908)'});
     cands.push({crs:'EPSG:32616',conf:0.3,label:'UTM 16N / EPSG:32616'});
     cands.push({crs:'EPSG:32617',conf:0.2,label:'UTM 17N / EPSG:32617'});
   }else if(my>150000&&my<650000){         // Norte ≈ 2–5·10⁵ → Lambert CR
     cands.push({crs:'EPSG:5456',conf:0.45,label:'Lambert Norte CR'});
     cands.push({crs:'EPSG:5457',conf:0.4,label:'Lambert Sur CR'});
   }else{
-    cands.push({crs:'EPSG:5367',conf:0.2,label:'CRTM05 / EPSG:5367'});
+    cands.push({crs:'EPSG:5367',conf:0.2,label:'CR05 / CRTM05 (EPSG:5367)'});
+    cands.push({crs:'EPSG:8908',conf:0.18,label:'CR-SIRGAS / CRTM05 (EPSG:8908)'});
     cands.push({crs:'EPSG:5456',conf:0.15,label:'Lambert Norte CR'});
   }
-  // La evidencia textual eleva la confianza del candidato coincidente.
+  // Evidencia textual explícita eleva la confianza del candidato coincidente.
   ev.forEach(function(c){
     var f=cands.filter(function(k){return k.crs===c;})[0];
     if(f){f.conf=Math.min(0.98,f.conf+0.4);f.evidence=true;}
     else cands.push({crs:c,conf:0.6,label:c,evidence:true});
   });
+  // «CRTM05» genérico (sin distinguir datum) sube 5367 y 8908 por igual → quedan
+  // ambiguos y exigirán confirmación del usuario.
+  if(hasCRTM&&!hasSirgas&&!has05){
+    cands.forEach(function(c){if(c.crs==='EPSG:5367'||c.crs==='EPSG:8908'){c.conf=Math.min(0.9,c.conf+0.2);c.evidence=true;}});
+  }
+  // Contención geográfica: un CRS que coloca el predio fuera de Costa Rica se
+  // penaliza fuerte; el que lo coloca dentro se refuerza.
+  var repX=median(points.map(function(p){return p[0];}));
+  var repY=median(points.map(function(p){return p[1];}));
+  cands.forEach(function(c){
+    var t=PI.crsPlacesInCR(repX,repY,c.crs);
+    if(t===true){c.conf=Math.min(0.98,c.conf+0.25);c.inCR=true;}
+    else if(t===false){c.conf=Math.max(0.02,c.conf-0.4);c.inCR=false;}
+  });
   cands.sort(function(a,b){return b.conf-a.conf;});
-  var best=cands[0];
+  var best=cands[0], second=cands[1];
+  var close=!!second&&(best.conf-second.conf)<0.15;
   return {best:best.crs, confidence:best.conf, candidates:cands, evidence:ev,
-    needsUser: best.conf<0.75};
+    needsUser: best.conf<0.75||close, ambiguous:close};
 };
 
 /* Reproyecta un anillo [X,Y] del CRS indicado a [lng,lat] (EPSG:4326) con proj4
@@ -6812,12 +6847,12 @@ function piRenderBuild(body){
     st.crsInfo=PI.classifyCRS(pts,st.ocrText);
     var needs=st.crsInfo.needsUser;
     if(!needs){ st.crs=st.crsInfo.best; st.crsConfirmed=true; }   // evidencia suficiente
-    var opts=[['EPSG:4326','Geográficas WGS84 (lon/lat)'],['EPSG:5367','CRTM05 / EPSG:5367'],['EPSG:5456','Lambert Norte CR'],['EPSG:5457','Lambert Sur CR'],['EPSG:32616','UTM 16N'],['EPSG:32617','UTM 17N']];
+    var opts=[['EPSG:4326','Geográficas WGS84 (lon/lat)'],['EPSG:5367','CR05 / CRTM05 (EPSG:5367)'],['EPSG:8908','CR-SIRGAS / CRTM05 (EPSG:8908)'],['EPSG:5456','Lambert Norte CR'],['EPSG:5457','Lambert Sur CR'],['EPSG:32616','UTM 16N'],['EPSG:32617','UTM 17N']];
     var blank=needs&&!st.crsConfirmed;
     crsSel='<div class="pi-row">Sistema de coordenadas: <select class="pi-in" id="pi-crs" onchange="piCrsPick(this.value)">'+
       (blank?'<option value="" selected>— Seleccione el CRS del plano —</option>':'')+
       opts.map(function(o){return '<option value="'+o[0]+'"'+((!blank&&st.crs===o[0])?' selected':'')+'>'+piEsc(o[1])+'</option>';}).join('')+'</select></div>'+
-      (needs?'<div class="pi-note pi-warn">CRS incierto: <b>debe seleccionar y confirmar</b> el sistema de coordenadas del plano. No se avanzará hasta confirmarlo.</div>':'<div class="pi-note pi-ok">CRS con evidencia: '+piEsc(st.crsInfo.candidates[0].label)+'</div>');
+      (needs?'<div class="pi-note pi-warn">CRS incierto: <b>seleccione y confirme</b> el sistema. Sugerencias: '+st.crsInfo.candidates.slice(0,2).map(function(k){return piEsc(k.label);}).join(' ó ')+'. No se avanzará hasta confirmarlo.</div>':'<div class="pi-note pi-ok">CRS con evidencia: '+piEsc(st.crsInfo.candidates[0].label)+'</div>');
   }
   body.innerHTML=(isC?'':'<div class="pi-note">El derrotero se construye desde un origen local (0,0). La ubicación real se define en el paso siguiente.</div>')+
     crsSel+
@@ -6931,7 +6966,7 @@ function piRenderLocate(body){
     '<div id="pi-loc-panel" style="margin-top:8px"></div>';
   piSetLoc(st.locMethod);
 }
-var PI_CRS_OPTS='<option value="EPSG:5367">CRTM05 / EPSG:5367</option><option value="EPSG:5456">Lambert Norte CR</option><option value="EPSG:5457">Lambert Sur CR</option><option value="EPSG:32616">UTM 16N</option><option value="EPSG:32617">UTM 17N</option><option value="EPSG:4326">Geográficas WGS84</option>';
+var PI_CRS_OPTS='<option value="EPSG:5367">CR05 / CRTM05 (EPSG:5367)</option><option value="EPSG:8908">CR-SIRGAS / CRTM05 (EPSG:8908)</option><option value="EPSG:5456">Lambert Norte CR</option><option value="EPSG:5457">Lambert Sur CR</option><option value="EPSG:32616">UTM 16N</option><option value="EPSG:32617">UTM 17N</option><option value="EPSG:4326">Geográficas WGS84</option>';
 function piSetLoc(m){
   var st=S.plano;st.locMethod=m;var p=document.getElementById('pi-loc-panel');if(!p)return;
   if(m==='coords'){
