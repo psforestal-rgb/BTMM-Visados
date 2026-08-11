@@ -765,7 +765,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-10-fix-importar-plano-v43';
+const APP_VERSION='2026-08-10-plano-pdf-nativo-v44';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6335,7 +6335,8 @@ function piNewState(){
     crs:'EPSG:5367',crsInfo:null,polyBuilt:null,workRingM:null,srcRing:null,
     adjust:{dx:0,dy:0,rot:0},adjHist:[],map:null,mapLayer:null,worker:null,
     planoAreaHa:null,build:null,locMethod:'coords',anchor:null,gridPts:[],cancelOCR:false,
-    located:false,crsConfirmed:false,gridCrs:'EPSG:5367',gridPredioPx:null,shapeVerdict:null};
+    located:false,crsConfirmed:false,gridCrs:'EPSG:5367',gridPredioPx:null,shapeVerdict:null,
+    pdfTextLines:null,pdfNative:false};
 }
 
 function openPlanoImport(){
@@ -6380,8 +6381,36 @@ async function piLoadDoc(){
   piRenderStep();
 }
 
+/* Extrae el texto nativo de una página PDF (si lo tiene), agrupado en líneas
+   por posición vertical y ordenado por X — permite saltarse el OCR en PDFs
+   digitales con texto seleccionable. */
+async function piExtractPdfText(page){
+  try{
+    var tc=await page.getTextContent();
+    if(!tc||!tc.items||!tc.items.length)return null;
+    var items=[];
+    tc.items.forEach(function(it){
+      if(!it.str||!it.str.trim())return;
+      var tr=it.transform||[1,0,0,1,0,0];
+      var h=Math.hypot(tr[2]||0,tr[3]||0)||it.height||10;
+      items.push({x:tr[4]||0,y:tr[5]||0,h:h,s:it.str});
+    });
+    if(!items.length)return null;
+    items.sort(function(a,b){return (b.y-a.y)||(a.x-b.x);});
+    var lines=[],cur=null;
+    items.forEach(function(it){
+      if(!cur||Math.abs(it.y-cur.y)>Math.max(2,cur.h*0.6)){cur={y:it.y,h:it.h,parts:[it]};lines.push(cur);}
+      else{cur.parts.push(it);if(it.h>cur.h)cur.h=it.h;}
+    });
+    var out=lines.map(function(l){
+      return l.parts.sort(function(a,b){return a.x-b.x;}).map(function(o){return o.s;}).join(' ').replace(/\s+/g,' ').trim();
+    }).filter(Boolean);
+    return out.length?out:null;
+  }catch(e){return null;}
+}
+
 async function piRenderPage(n){
-  var st=S.plano;st.pageNum=n;
+  var st=S.plano;st.pageNum=n;st.pdfTextLines=null;
   if(st.kind==='pdf'){
     var page=await st.pdf.getPage(n);
     var vp0=page.getViewport({scale:1});
@@ -6391,6 +6420,7 @@ async function piRenderPage(n){
     var ctx=c.getContext('2d',{willReadFrequently:true});
     await page.render({canvasContext:ctx,viewport:vp}).promise;
     st.baseCanvas=c;
+    try{st.pdfTextLines=await piExtractPdfText(page);}catch(e){st.pdfTextLines=null;}
   }else{
     var r=await renderRasterPlan(st.file);   // reutiliza el render de imagen/TIFF
     st.baseCanvas=r.canvas;
@@ -6600,9 +6630,12 @@ function piRegionCanvas(preprocess){
 /* ── PASO: OCR ── */
 function piRenderOCR(body){
   var st=S.plano;
-  body.innerHTML='<div class="pi-note">Ejecute el OCR sobre el recuadro, o transcriba a mano si el texto es manuscrito o de baja calidad.</div>'+
+  var nativa=(st.kind==='pdf'&&st.pdfTextLines&&st.pdfTextLines.length)?
+    '<div class="pi-note pi-ok">Este PDF tiene <b>texto seleccionable</b> ('+st.pdfTextLines.length+' líneas): puede extraerlo <b>sin OCR</b> (más exacto).</div>'+
+    '<div class="pi-row"><button class="pi-btn prim" onclick="piUsePdfText()">📄 Usar texto del PDF (sin OCR)</button></div>':'';
+  body.innerHTML=nativa+'<div class="pi-note">Ejecute el OCR sobre el recuadro, o transcriba a mano si el texto es manuscrito o de baja calidad.</div>'+
     '<div class="pi-row">'+
-    '<button class="pi-btn prim" id="pi-ocr-run" onclick="piRunOCR()">🔎 Ejecutar OCR</button>'+
+    '<button class="pi-btn'+(nativa?'':' prim')+'" id="pi-ocr-run" onclick="piRunOCR()">🔎 Ejecutar OCR</button>'+
     '<button class="pi-btn" onclick="piSkipOCR()">✍️ Transcribir a mano</button>'+
     '<button class="pi-btn" id="pi-ocr-cancel" style="display:none" onclick="S.plano.cancelOCR=true">Detener</button></div>'+
     '<div id="pi-ocr-msg" style="font-size:12px;color:#9db4d6;margin-top:6px"></div>'+
@@ -6611,14 +6644,26 @@ function piRenderOCR(body){
   var c=piRegionCanvas(true);var sc=Math.min(1,900/c.width);var d=document.createElement('canvas');d.width=c.width*sc;d.height=c.height*sc;d.getContext('2d').drawImage(c,0,0,d.width,d.height);prev.appendChild(d);
   document.getElementById('pi-next').style.display='none';
 }
-function piSkipOCR(){var st=S.plano;st.ocrText='';st.rows=piEmptyRows(st.extractType);st.confRows=[];piGoStep('table');}
+function piSkipOCR(){var st=S.plano;st.ocrText='';st.pdfNative=false;st.rows=piEmptyRows(st.extractType);st.confRows=[];piGoStep('table');}
+/* Usa el texto nativo del PDF (sin OCR): más exacto en planos digitales. */
+function piUsePdfText(){
+  var st=S.plano;
+  var text=(st.pdfTextLines||[]).join('\n');
+  if(!text.trim()){piToast('El PDF no tiene texto utilizable; use OCR.',true,3500);return;}
+  st.ocrText=text;st.pdfNative=true;
+  var parsed=piParseOCR(text,st.extractType,null);
+  st.rows=parsed.rows;
+  st.confRows=parsed.rows.map(function(){return st.extractType==='coords'?{p:100,e:99,n:99}:{dir:99,dist:99};});
+  piToast('Texto del PDF extraído sin OCR. Revise la tabla.',false,3500);
+  piGoStep('table');
+}
 function piEmptyRows(type){
   var r=[];for(var i=0;i<3;i++)r.push(type==='coords'?{p:i+1,e:'',n:''}:{line:i+1,dir:'',dist:''});
   return r;
 }
 
 async function piRunOCR(){
-  var st=S.plano;st.cancelOCR=false;
+  var st=S.plano;st.cancelOCR=false;st.pdfNative=false;
   var runBtn=document.getElementById('pi-ocr-run'),cancelBtn=document.getElementById('pi-ocr-cancel'),msg=document.getElementById('pi-ocr-msg');
   runBtn.disabled=true;cancelBtn.style.display='';
   piProg(true,0);msg.textContent='Cargando motor OCR (una sola vez)…';
@@ -7045,6 +7090,7 @@ function piBuildProvenance(){
     origen:'plano',
     archivoFuente:st.name,
     tipoExtraccion:st.extractType,
+    fuenteTexto:st.pdfNative?'pdf-nativo':(st.ocrText?'ocr':'manual'),
     crsOriginal:st.extractType==='coords'?st.crs:'derrotero-local',
     datosTranscritos:st.rows,
     areaHa:+haNow.toFixed(4),
