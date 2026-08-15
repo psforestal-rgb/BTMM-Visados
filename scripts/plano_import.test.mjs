@@ -202,5 +202,19 @@ t('coordenadas → polígono cerrado → área CRTM05 coherente', () => {
   assert(near(areaHa(fc), 100 * 80 / 10000, 1e-6), 'área=' + areaHa(fc));
 });
 
+console.log('9) estimateSkew — enderezado por perfil de proyección');
+function makeSkewImg(w, h, alphaDeg, spacing) {
+  const s = Math.tan(alphaDeg * Math.PI / 180), pix = new Uint8Array(w * h).fill(255);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const xr = x - s * (y - h / 2);
+    if (Math.abs(((xr % spacing) + spacing) % spacing) < 1.5) pix[y * w + x] = 0;
+  }
+  return pix;
+}
+t('detecta +3° (±0.5)', () => { const a = PI.estimateSkew(makeSkewImg(200, 200, 3, 20), 200, 200, 8, 0.25); assert(near(a, 3, 0.5), 'a=' + a); });
+t('detecta -2.5° (±0.5)', () => { const a = PI.estimateSkew(makeSkewImg(200, 200, -2.5, 20), 200, 200, 8, 0.25); assert(near(a, -2.5, 0.5), 'a=' + a); });
+t('imagen derecha → ~0°', () => { const a = PI.estimateSkew(makeSkewImg(200, 200, 0, 20), 200, 200, 8, 0.25); assert(near(a, 0, 0.5), 'a=' + a); });
+t('imagen vacía → 0 (sin datos)', () => assert(PI.estimateSkew(new Uint8Array(200 * 200).fill(255), 200, 200) === 0));
+
 console.log('\nRESULTADO: ' + pass + ' ok, ' + fail + ' fallo(s)');
 process.exit(fail ? 1 : 0);
