@@ -257,6 +257,17 @@ else {
   (Math.abs(traceFlow.haNow - 236 * 176 / 10000) < 0.05) ? ok('área georreferenciada ≈ ' + traceFlow.haNow.toFixed(3) + ' ha') : fallo('área inesperada: ' + traceFlow.haNow);
 }
 
+console.log('7e) Decodificador geométrico (cierre / atípico / semáforo)');
+const decode = await page.evaluate(() => {
+  const rows = [{ dir: '90', dist: '100' }, { dir: '180', dist: '100' }, { dir: '270', dist: '160' }, { dir: '0', dist: '100' }];
+  const cf = PI.suggestClosureFix(rows, 'azimut');
+  const conf = PI.confidence({ hasData: true, inCR: true, fromCoords: false, closureAbs: 60, perimeter: 460, suggestion: cf && cf.suggestion });
+  return { row: cf && cf.suggestion && cf.suggestion.rowIndex, to: cf && cf.suggestion && cf.suggestion.toValue, level: conf.level };
+});
+(decode.row === 2 && Math.abs(decode.to - 100) < 1e-6 && decode.level === 'amber')
+  ? ok('decodificador sugiere fila 3→100 y semáforo ámbar')
+  : fallo('decodificador: ' + JSON.stringify(decode));
+
 console.log('8) Registro de errores runtime');
 const rep = await page.evaluate(() => window.btmmReporteErrores(false));
 rep && rep.herramienta === 'BTMM-Visados' ? ok(`reporte generado (${rep.totalErrores} errores registrados)`) : fallo('btmmReporteErrores no devolvió reporte');
