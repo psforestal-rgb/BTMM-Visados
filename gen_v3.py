@@ -765,7 +765,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-15-decodificador-geometrico-v50';
+const APP_VERSION='2026-08-15-cuadricula-ransac-v51';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6642,6 +6642,42 @@ PI.similarityFromPairs=function(pairs){
   return {a:a,b:b,tx:dx-(a*sx-b*sy),ty:dy-(b*sx+a*sy),scale:Math.hypot(a,b)};
 };
 PI.applySimilarity=function(T,pt){return [T.a*pt[0]-T.b*pt[1]+T.tx, T.b*pt[0]+T.a*pt[1]+T.ty];};
+/* Residuales de una similitud: distancia (en unidades del destino) entre cada
+   punto transformado y su objetivo, y el RMSE. Sirve para medir la calidad del
+   ajuste de la cuadrícula (en metros). */
+PI.similarityResiduals=function(T, pairs){
+  var res=pairs.map(function(p){var q=PI.applySimilarity(T,p.src);return Math.hypot(q[0]-p.dst[0],q[1]-p.dst[1]);});
+  var ss=0; res.forEach(function(r){ss+=r*r;});
+  return {res:res, rmse:res.length?Math.sqrt(ss/res.length):0};
+};
+/* Ajuste robusto de similitud (mínimos cuadrados sobre N pares + RANSAC). Con ≥4
+   pares prueba muestras mínimas de 2 puntos, cuenta inliers dentro de un umbral
+   adaptativo, y reajusta por mínimos cuadrados solo con los inliers: así un punto
+   de control mal marcado o mal leído no arrastra toda la georreferencia. Devuelve
+   la transformación, el RMSE, la escala y los índices de inliers/atípicos. */
+PI.fitSimilarityRobust=function(pairs, opts){
+  opts=opts||{}; var n=pairs.length; if(n<2)return null;
+  var Tall=PI.similarityFromPairs(pairs); if(!Tall)return null;
+  var allIdx=pairs.map(function(_,i){return i;});
+  if(n<4){ var r0=PI.similarityResiduals(Tall,pairs); return {T:Tall,rmse:r0.rmse,residuals:r0.res,inliers:allIdx,outliers:[],scale:Tall.scale,robust:false}; }
+  var rAll=PI.similarityResiduals(Tall,pairs).res.slice().sort(function(a,b){return a-b;});
+  var med=rAll[Math.floor(rAll.length/2)]||0;
+  var thr=opts.threshold!=null?opts.threshold:Math.max(0.5,(Tall.scale||1)*2,med*2.5);
+  var samples=[]; for(var i=0;i<n;i++)for(var j=i+1;j<n;j++)samples.push([i,j]);
+  var cap=Math.min(samples.length,80), best=null;
+  for(var s=0;s<cap;s++){
+    var Tt=PI.similarityFromPairs([pairs[samples[s][0]],pairs[samples[s][1]]]); if(!Tt)continue;
+    var inl=[];
+    for(var k=0;k<n;k++){var q=PI.applySimilarity(Tt,pairs[k].src); if(Math.hypot(q[0]-pairs[k].dst[0],q[1]-pairs[k].dst[1])<=thr)inl.push(k);}
+    if(!best||inl.length>best.length)best=inl;
+  }
+  if(!best||best.length<2){ var r1=PI.similarityResiduals(Tall,pairs); return {T:Tall,rmse:r1.rmse,residuals:r1.res,inliers:allIdx,outliers:[],scale:Tall.scale,robust:false}; }
+  var Tin=PI.similarityFromPairs(best.map(function(k){return pairs[k];}))||Tall;
+  var rr=PI.similarityResiduals(Tin,pairs);
+  var outliers=[]; for(var m=0;m<n;m++)if(best.indexOf(m)<0)outliers.push(m);
+  var ss=0; best.forEach(function(k){ss+=rr.res[k]*rr.res[k];});
+  return {T:Tin,rmse:Math.sqrt(ss/best.length),residuals:rr.res,inliers:best,outliers:outliers,scale:Tin.scale,robust:true,threshold:thr};
+};
 
 // Exporta al ámbito (window.PI en el navegador; module.exports en Node de prueba).
 root.PI=PI;
@@ -7582,22 +7618,24 @@ function piGridCompute(){
   if(st.extractType==='trace'){
     if(st.gridPts.length<2||!st.tracePx){st.located=false;return null;}
     var pairsT=st.gridPts.map(function(g){return {src:[g.px,-g.py],dst:[g.e,g.n]};});
-    var TT=PI.similarityFromPairs(pairsT);if(!TT){st.located=false;return null;}
+    var fitT=PI.fitSimilarityRobust(pairsT);if(!fitT){st.located=false;return null;}
+    var TT=fitT.T;
     var ringW=st.tracePx.map(function(p){return PI.applySimilarity(TT,[p[0],-p[1]]);});
     var ring5367=st.gridCrs==='EPSG:5367'?ringW:ringW.map(function(p){return proj4(st.gridCrs,'EPSG:5367',[p[0],p[1]]);});
     st.workRingM=ring5367;if(st.build)st.build.vertices=ring5367.slice();
-    st.located=true;st.locMethod='trace-grid';st._gridScale=TT.scale;
-    return {mPerPx:TT.scale};
+    st.located=true;st.locMethod='trace-grid';st._gridScale=TT.scale;st._gridRMSE=fitT.rmse;st._gridOutliers=fitT.outliers;st._gridRobust=fitT.robust;
+    return {mPerPx:TT.scale,rmse:fitT.rmse};
   }
   if(st.gridPts.length<2||!st.gridPredioPx){st.located=false;return null;}
   var pairs=st.gridPts.map(function(g){return {src:[g.px,g.py],dst:[g.e,g.n]};});
-  var T=PI.similarityFromPairs(pairs);if(!T){st.located=false;return null;}
+  var fit=PI.fitSimilarityRobust(pairs);if(!fit){st.located=false;return null;}
+  var T=fit.T;
   var world=PI.applySimilarity(T,st.gridPredioPx);           // en el CRS de la cuadrícula
   var w5367=st.gridCrs==='EPSG:5367'?world:proj4(st.gridCrs,'EPSG:5367',[world[0],world[1]]);
   var cen=PI.centroid(st.workRingM);
   st.workRingM=st.workRingM.map(function(p){return [p[0]-cen[0]+w5367[0],p[1]-cen[1]+w5367[1]];});
-  st.located=true;st.locMethod='grid';st._gridScale=T.scale;
-  return {mPerPx:T.scale};
+  st.located=true;st.locMethod='grid';st._gridScale=T.scale;st._gridRMSE=fit.rmse;st._gridOutliers=fit.outliers;st._gridRobust=fit.robust;
+  return {mPerPx:T.scale,rmse:fit.rmse};
 }
 function piGridRefresh(){
   var st=S.plano;var isTrace=st.extractType==='trace';
@@ -7605,8 +7643,14 @@ function piGridRefresh(){
   if(stat)stat.textContent=st.gridPts.length+' intersecciones'+(isTrace?(st.tracePx?' · contorno de '+st.tracePx.length+' vértices':''):' · '+(st.gridPredioPx?'predio marcado':'predio sin marcar'));
   var list=document.getElementById('pi-grid-list');
   if(list){
-    list.innerHTML=st.gridPts.map(function(g,i){return '<div class="pi-chip">#'+(i+1)+' px('+Math.round(g.px)+','+Math.round(g.py)+') → E '+g.e+' N '+g.n+' <a href="#" onclick="S.plano.gridPts.splice('+i+',1);piGridCompute();piGridRefresh();return false">✕</a></div>';}).join('');
-    if(st.located&&st._gridScale)list.innerHTML+='<div class="pi-note pi-ok" style="margin-top:6px">✔ '+(isTrace?'Contorno georreferenciado':'Ubicación aproximada estimada')+' ('+st._gridScale.toFixed(3)+' m/px). Afine en el ajuste.</div>';
+    var outs=st._gridOutliers||[];
+    list.innerHTML=st.gridPts.map(function(g,i){var bad=outs.indexOf(i)>=0;return '<div class="pi-chip"'+(bad?' style="outline:1px solid #e08a6f;color:#ffc9c9"':'')+'>'+(bad?'⚠ ':'')+'#'+(i+1)+' px('+Math.round(g.px)+','+Math.round(g.py)+') → E '+g.e+' N '+g.n+' <a href="#" onclick="S.plano.gridPts.splice('+i+',1);S.plano._gridOutliers=null;piGridCompute();piGridRefresh();return false">✕</a></div>';}).join('');
+    if(st.located&&st._gridScale){
+      var q=(st._gridRMSE!=null&&isFinite(st._gridRMSE))?(' · residual RMSE '+st._gridRMSE.toFixed(2)+' m'):'';
+      list.innerHTML+='<div class="pi-note pi-ok" style="margin-top:6px">✔ '+(isTrace?'Contorno georreferenciado':'Ubicación aproximada estimada')+' ('+st._gridScale.toFixed(3)+' m/px'+q+'). Afine en el ajuste.</div>';
+      if(outs.length)list.innerHTML+='<div class="pi-note pi-warn" style="margin-top:4px">⚠ '+outs.length+' punto(s) no encajan con el resto ('+outs.map(function(i){return '#'+(i+1);}).join(', ')+') y se excluyeron del ajuste (RANSAC). Revíselos o elimínelos.</div>';
+      else if(st._gridRMSE!=null&&st._gridRMSE>2)list.innerHTML+='<div class="pi-note pi-warn" style="margin-top:4px">⚠ Residual alto ('+st._gridRMSE.toFixed(2)+' m): revise las coordenadas de las intersecciones.</div>';
+    }
     else if(st.gridPts.length<2||(!isTrace&&!st.gridPredioPx))list.innerHTML+='<div class="pi-note" style="margin-top:6px">Faltan datos: marque ≥2 intersecciones'+(isTrace?'.':' y la posición del predio.')+'</div>';
   }
 }

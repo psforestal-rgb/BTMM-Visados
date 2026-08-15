@@ -377,5 +377,31 @@ t('ámbar: cierre con sugerencia', () => assert(PI.confidence({ hasData: true, i
 t('rojo: fuera de Costa Rica', () => assert(PI.confidence({ hasData: true, inCR: false }).level === 'red'));
 t('rojo: cierre sin corrección', () => assert(PI.confidence({ hasData: true, inCR: true, fromCoords: false, closureAbs: 30, perimeter: 400 }).level === 'red'));
 
+console.log('18) fitSimilarityRobust — ajuste de cuadrícula robusto (RANSAC + RMSE)');
+const gp = (x, y) => ({ src: [x, y], dst: [2 * x + 1000, 2 * y + 5000] });   // escala 2 m/px, sin giro
+t('ajuste limpio (4 pts) → rmse≈0, escala 2, sin atípicos', () => {
+  const r = PI.fitSimilarityRobust([gp(0, 0), gp(100, 0), gp(0, 100), gp(100, 100)]);
+  assert(r && near(r.rmse, 0) && near(r.scale, 2) && r.outliers.length === 0, JSON.stringify(r && { rmse: r.rmse, scale: r.scale, out: r.outliers }));
+});
+t('un punto atípico entre 5 → se descarta, rmse≈0, escala 2', () => {
+  const r = PI.fitSimilarityRobust([gp(0, 0), gp(100, 0), gp(0, 100), gp(100, 100), { src: [50, 50], dst: [99999, 88888] }]);
+  assert(r.robust === true && r.outliers.length === 1 && r.outliers[0] === 4, 'out=' + JSON.stringify(r.outliers));
+  assert(near(r.rmse, 0) && near(r.scale, 2), 'rmse=' + r.rmse + ' scale=' + r.scale);
+});
+t('2 puntos → similitud simple (no robusto)', () => {
+  const r = PI.fitSimilarityRobust([gp(0, 0), gp(100, 100)]);
+  assert(r && r.robust === false && near(r.scale, 2), JSON.stringify(r && { robust: r.robust, scale: r.scale }));
+});
+t('reproyecta con la transformación ajustada', () => {
+  const r = PI.fitSimilarityRobust([gp(0, 0), gp(100, 0), gp(0, 100), gp(100, 100)]);
+  const q = PI.applySimilarity(r.T, [50, 50]);
+  assert(near(q[0], 1100) && near(q[1], 5100), 'q=' + q);
+});
+t('similarityResiduals detecta un punto desajustado', () => {
+  const pairs = [gp(0, 0), gp(100, 0), gp(0, 100), { src: [100, 100], dst: [1210, 5200] }];
+  const rr = PI.similarityResiduals(PI.similarityFromPairs(pairs), pairs);
+  assert(rr.res[3] > 1, 'residual: ' + rr.res[3]);
+});
+
 console.log('\nRESULTADO: ' + pass + ' ok, ' + fail + ' fallo(s)');
 process.exit(fail ? 1 : 0);

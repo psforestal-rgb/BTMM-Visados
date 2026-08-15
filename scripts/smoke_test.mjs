@@ -268,6 +268,16 @@ const decode = await page.evaluate(() => {
   ? ok('decodificador sugiere fila 3→100 y semáforo ámbar')
   : fallo('decodificador: ' + JSON.stringify(decode));
 
+console.log('7f) Ajuste robusto de cuadrícula (RANSAC + RMSE)');
+const ransac = await page.evaluate(() => {
+  const gp = (x, y) => ({ src: [x, y], dst: [2 * x + 1000, 2 * y + 5000] });
+  const r = PI.fitSimilarityRobust([gp(0, 0), gp(100, 0), gp(0, 100), gp(100, 100), { src: [50, 50], dst: [99999, 88888] }]);
+  return { robust: r.robust, out: r.outliers, rmse: r.rmse, scale: r.scale };
+});
+(ransac.robust === true && ransac.out.length === 1 && ransac.out[0] === 4 && Math.abs(ransac.scale - 2) < 1e-6 && ransac.rmse < 1e-6)
+  ? ok('RANSAC descarta el punto atípico (rmse≈0, escala 2)')
+  : fallo('ajuste robusto: ' + JSON.stringify(ransac));
+
 console.log('8) Registro de errores runtime');
 const rep = await page.evaluate(() => window.btmmReporteErrores(false));
 rep && rep.herramienta === 'BTMM-Visados' ? ok(`reporte generado (${rep.totalErrores} errores registrados)`) : fallo('btmmReporteErrores no devolvió reporte');
