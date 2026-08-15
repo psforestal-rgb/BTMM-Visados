@@ -765,7 +765,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-15-cuadricula-ransac-v51';
+const APP_VERSION='2026-08-15-concordancia-forma-v52';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6678,6 +6678,47 @@ PI.fitSimilarityRobust=function(pairs, opts){
   var ss=0; best.forEach(function(k){ss+=rr.res[k]*rr.res[k];});
   return {T:Tin,rmse:Math.sqrt(ss/best.length),residuals:rr.res,inliers:best,outliers:outliers,scale:Tin.scale,robust:true,threshold:thr};
 };
+/* Remuestrea un anillo cerrado a K puntos equiespaciados por longitud de arco. */
+PI.resampleClosed=function(ring, K){
+  var n=ring.length; if(n<2)return ring.slice();
+  var seg=[], per=0;
+  for(var i=0;i<n;i++){var a=ring[i],b=ring[(i+1)%n];var d=Math.hypot(b[0]-a[0],b[1]-a[1]);seg.push(d);per+=d;}
+  if(per<1e-9)return ring.slice();
+  var step=per/K, out=[], si=0, acc=0;
+  for(var k=0;k<K;k++){
+    var target=k*step;
+    while(si<n-1&&acc+seg[si]<target){acc+=seg[si];si++;}
+    var a2=ring[si], b2=ring[(si+1)%n], t=seg[si]>1e-9?(target-acc)/seg[si]:0;
+    out.push([a2[0]+(b2[0]-a2[0])*t, a2[1]+(b2[1]-a2[1])*t]);
+  }
+  return out;
+};
+/* Concordancia de forma entre dos polígonos cerrados (A y B), invariante a
+   traslación, giro, escala, vértice inicial y sentido de recorrido. Remuestrea
+   ambos a K puntos y prueba todos los desfases cíclicos y la reflexión; para cada
+   correspondencia ajusta una similitud A→B y se queda con el menor RMSE. Devuelve
+   la transformación, el RMSE (en unidades de B), si hubo reflexión y rmsePct
+   (RMSE normalizado por el tamaño de B). Base de la verificación de forma. */
+PI.matchPolygons=function(A, B, opts){
+  opts=opts||{}; var K=opts.K||64;
+  var Ar=PI.resampleClosed(A,K), Br=PI.resampleClosed(B,K);
+  if(Ar.length!==K||Br.length!==K)return null;
+  var best=null;
+  [false,true].forEach(function(refl){
+    var Bs=refl?Br.slice().reverse():Br;
+    for(var off=0;off<K;off++){
+      var pairs=[];
+      for(var i=0;i<K;i++)pairs.push({src:Ar[i],dst:Bs[(i+off)%K]});
+      var T=PI.similarityFromPairs(pairs); if(!T)continue;
+      var rmse=PI.similarityResiduals(T,pairs).rmse;
+      if(!best||rmse<best.rmse)best={T:T,rmse:rmse,offset:off,reflected:refl};
+    }
+  });
+  if(!best)return null;
+  best.sizeB=PI.perimeter(B); best.K=K;
+  best.rmsePct=best.sizeB>1e-9?best.rmse/(best.sizeB/4):Infinity;
+  return best;
+};
 
 // Exporta al ámbito (window.PI en el navegador; module.exports en Node de prueba).
 root.PI=PI;
@@ -7454,7 +7495,7 @@ function piTraceRun(){
 }
 function piRenderValidate(body){
   body.innerHTML='<div class="pi-note">Verificación de forma (opcional): detecta el contorno dibujado en el plano (misma función <code>detectPdfPredioBox</code> del módulo de plano) y superpone el polígono calculado. <b>Solo valida; no modifica el derrotero.</b></div>'+
-    '<div class="pi-row"><button class="pi-btn prim" onclick="piRunShapeCheck()">🔍 Detectar contorno y comparar</button> <button class="pi-btn" onclick="piGoStep(\'locate\')">Omitir verificación</button></div>'+
+    '<div class="pi-row"><button class="pi-btn prim" onclick="piRunShapeCheck()">🔍 Detectar contorno y comparar</button> <button class="pi-btn" onclick="piShapeMatchStart()">📐 Comparar forma por trazado</button> <button class="pi-btn" onclick="piGoStep(\'locate\')">Omitir verificación</button></div>'+
     '<div id="pi-val-out" style="margin-top:10px"></div>';
   if(S.plano.shapeVerdict)piPaintVerdict();
 }
@@ -7466,6 +7507,44 @@ function piShapeGeoJSON(){
   var ll=shifted.map(function(p){return proj4('EPSG:5367','EPSG:4326',[p[0],p[1]]);});
   var coords=ll.map(function(p){return [p[0],p[1]];}); coords.push([coords[0][0],coords[0][1]]);
   return {type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[coords]}}]};
+}
+/* Verificación de forma por trazado: el usuario marca el predio dibujado en el
+   plano, se traza su contorno y se compara su FORMA con el polígono calculado
+   (registro por similitud, PI.matchPolygons). No modifica la geometría. */
+function piShapeMatchStart(){
+  var st=S.plano, out=document.getElementById('pi-val-out');
+  if(!st.workRingM||st.workRingM.length<3){out.innerHTML='<div class="pi-note pi-warn">Genere primero el polígono para poder comparar su forma.</div>';return;}
+  out.innerHTML='<div class="pi-note">Haga <b>clic dentro del predio dibujado</b> en el plano: se trazará su contorno y se comparará su <b>forma</b> con el polígono calculado (registro por similitud, invariante a giro y escala). No modifica la geometría.</div>'+
+    '<div id="pi-sm-stat" style="font-size:12px;color:#9db4d6;margin:4px 0"></div>'+
+    '<div class="pi-canvas-wrap" id="pi-sm-cw" style="max-height:340px;overflow:auto"></div>';
+  st._smContour=null; piShapeMatchMount();
+}
+function piShapeMatchMount(){
+  var st=S.plano,wrap=document.getElementById('pi-sm-cw');if(!wrap)return;
+  var base=piWorkingCanvas();var maxW=Math.min(900,wrap.parentElement.clientWidth-4);var sc=Math.min(1,maxW/base.width);
+  var disp=document.createElement('canvas');disp.width=Math.round(base.width*sc);disp.height=Math.round(base.height*sc);
+  var dctx=disp.getContext('2d');dctx.drawImage(base,0,0,disp.width,disp.height);
+  if(st._smContour&&st._smContour.length>2){dctx.strokeStyle='#7fd7ff';dctx.lineWidth=2;dctx.beginPath();st._smContour.forEach(function(p,i){var X=p[0]*sc,Y=p[1]*sc;if(i===0)dctx.moveTo(X,Y);else dctx.lineTo(X,Y);});dctx.closePath();dctx.stroke();}
+  wrap.innerHTML='';wrap.appendChild(disp);wrap.style.width=disp.width+'px';
+  disp.onclick=function(ev){var r=disp.getBoundingClientRect();piShapeMatchRun([Math.round((ev.clientX-r.left)/sc),Math.round((ev.clientY-r.top)/sc)]);};
+}
+function piShapeMatchRun(seed){
+  var st=S.plano,stat=document.getElementById('pi-sm-stat');
+  if(stat)stat.textContent='Trazando y comparando…';
+  setTimeout(function(){
+    try{
+      var res=piTraceFromCanvas(piWorkingCanvas(),seed,{close:1});
+      if(res.leaked||!res.ring){st._smContour=null;piShapeMatchMount();if(stat)stat.textContent='No se pudo trazar un contorno cerrado ahí (línea abierta o texto encima). Pruebe otro punto, suba el cierre de huecos, o recorte al predio.';return;}
+      st._smContour=res.ring;
+      var m=PI.matchPolygons(res.ring, st.workRingM);
+      piShapeMatchMount();
+      if(!m){if(stat)stat.textContent='No se pudo comparar la forma.';return;}
+      var pct=m.rmsePct, verdict=pct<0.03?'Coincidencia alta':(pct<0.08?'Aceptable':(pct<0.2?'Dudosa':'Incompatible'));
+      st.shapeVerdict={verdict:verdict,matchRmse:m.rmse,matchPct:pct,reflected:m.reflected,method:'trazado'};
+      var color=pct<0.08?'#bff0cf':(pct<0.2?'#f3e3a3':'#ffc9c9');
+      if(stat)stat.innerHTML='<span style="color:'+color+'">Concordancia de forma: <b>'+verdict+'</b> — desajuste medio ≈ '+(pct*100).toFixed(1)+'% del lado (RMSE '+m.rmse.toFixed(2)+' m)'+(m.reflected?', orientación espejo':'')+'. Solo verifica; no cambia la geometría.</span>';
+    }catch(e){if(stat)stat.textContent='Error al comparar: '+piEsc(e.message);console.error(e);}
+  },20);
 }
 function piRunShapeCheck(){
   var st=S.plano, out=document.getElementById('pi-val-out');
@@ -7482,6 +7561,12 @@ function piRunShapeCheck(){
 }
 function piPaintVerdict(){
   var st=S.plano, v=st.shapeVerdict, out=document.getElementById('pi-val-out');if(!out||!v)return;
+  if(v.method==='trazado'){
+    var cc=v.matchPct<0.08?'pi-ok':(v.matchPct<0.2?'pi-warn':'pi-err');
+    out.innerHTML='<div class="pi-note '+cc+'"><b>'+piEsc(v.verdict)+'</b> · concordancia de forma por trazado · desajuste medio ≈ '+(v.matchPct*100).toFixed(1)+'% del lado (RMSE '+v.matchRmse.toFixed(2)+' m)'+(v.reflected?' · orientación espejo':'')+'</div>'+
+      '<div class="pi-note">Solo verifica la coincidencia de forma entre el polígono calculado y el dibujo del plano; no altera la geometría.</div>';
+    return;
+  }
   if(v.verdict==='no-detectado'){
     out.innerHTML='<div class="pi-note pi-warn">No se detectó automáticamente un contorno compatible ('+piEsc(v.error||'')+'). Verifique visualmente; puede continuar (el dibujo solo valida).</div>';
     return;
