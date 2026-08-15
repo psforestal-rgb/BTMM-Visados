@@ -765,7 +765,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-10-cierre-compensacion-v46';
+const APP_VERSION='2026-08-10-deskew-auto-v47';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6195,6 +6195,28 @@ PI.compensateTransit=function(legs, origin){
   verts=verts.slice(0,verts.length-1);
   return {vertices:verts, area:PI.shoelaceArea(verts), perimeter:PI.perimeter(verts), metodo:'Tránsito'};
 };
+/* Estima el ángulo de inclinación (skew) de un documento por perfil de proyección
+   con cizalla: para cada ángulo candidato desplaza cada fila y mide la varianza de
+   las sumas de píxeles oscuros; el texto/lineas alineados producen picos altos. JS
+   puro (sin dependencias). pix: gris 0..255 (0=oscuro). Devuelve grados en [-max,max]. */
+PI.estimateSkew=function(pix, w, h, maxDeg, stepDeg){
+  maxDeg=maxDeg||8; stepDeg=stepDeg||0.25;
+  var dark=new Uint8Array(w*h), any=0;
+  for(var i=0;i<pix.length;i++){ if(pix[i]<128){dark[i]=1;any++;} }
+  if(any<w){ return 0; }
+  var best=0, bestScore=-1;
+  for(var deg=-maxDeg; deg<=maxDeg+1e-9; deg+=stepDeg){
+    var t=Math.tan(deg*Math.PI/180), off=Math.ceil(Math.abs(t)*h)+1;
+    var proj=new Float64Array(w+2*off);
+    for(var y=0;y<h;y++){
+      var shift=Math.round(t*(y-h/2)), base=y*w;
+      for(var x=0;x<w;x++){ if(dark[base+x])proj[x-shift+off]++; }
+    }
+    var score=0; for(var k=0;k<proj.length;k++)score+=proj[k]*proj[k];
+    if(score>bestScore){ bestScore=score; best=deg; }
+  }
+  return best;
+};
 PI.transform=function(ring, dx, dy, rotDeg, center){
   var c=center||PI.centroid(ring);
   var r=(rotDeg||0)*Math.PI/180, cos=Math.cos(r), sin=Math.sin(r);
@@ -6606,9 +6628,10 @@ function piRenderPrepare(body){
   body.innerHTML='<div class="pi-note">Elija la página (si el PDF tiene varias), rote si es necesario y, opcionalmente, arrastre para recortar la zona útil. El plano no se envía a ningún servicio.</div>'+
     pg+
     '<div class="pi-row"><button class="pi-tool" onclick="piRotate()">↻ Rotar 90°</button>'+
+    '<button class="pi-tool" onclick="piAutoDeskew()">📐 Enderezar auto</button>'+
     '<button class="pi-tool" onclick="piCropToggle()" id="pi-cropbtn">✂️ Recortar</button>'+
     '<button class="pi-tool" onclick="piCropClear()">Quitar recorte</button>'+
-    '<span id="pi-crop-stat" style="font-size:12px;color:#9db4d6"></span></div>'+
+    '<span id="pi-crop-stat" style="font-size:12px;color:#9db4d6"></span> <span id="pi-skew-stat" style="font-size:12px;color:#bff0cf"></span></div>'+
     '<div class="pi-canvas-wrap" id="pi-cw"></div>';
   piMountPreview();
 }
@@ -6634,6 +6657,41 @@ function piMountPreview(){
 function piPage(d){var st=S.plano;var n=Math.min(st.pages,Math.max(1,st.pageNum+d));if(n!==st.pageNum){st.crop=null;piRenderPageThen(n);}}
 async function piRenderPageThen(n){await piRenderPage(n);piMountPreview();var e=document.getElementById('pi-pg');if(e)e.textContent=n;}
 function piRotate(){var st=S.plano;st.rot=(st.rot+90)%360;st.crop=null;piMountPreview();}
+/* Gris reducido de un canvas (para estimar inclinación). */
+function piGrayPixels(src,maxDim){
+  var sc=Math.min(1,maxDim/Math.max(src.width,src.height));
+  var w=Math.max(1,Math.round(src.width*sc)), h=Math.max(1,Math.round(src.height*sc));
+  var c=document.createElement('canvas');c.width=w;c.height=h;
+  var ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(src,0,0,w,h);
+  var d=ctx.getImageData(0,0,w,h).data, pix=new Uint8Array(w*h);
+  for(var i=0,j=0;i<d.length;i+=4,j++)pix[j]=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)|0;
+  return {pix:pix,w:w,h:h};
+}
+/* Rota un canvas un ángulo arbitrario (grados), expandiendo el lienzo y con
+   fondo blanco para no ennegrecer las esquinas del documento. */
+function piRotateCanvasDeg(src,deg){
+  var r=deg*Math.PI/180, cos=Math.abs(Math.cos(r)), sin=Math.abs(Math.sin(r));
+  var w=src.width, h=src.height, nw=Math.ceil(w*cos+h*sin), nh=Math.ceil(w*sin+h*cos);
+  var c=document.createElement('canvas');c.width=nw;c.height=nh;
+  var ctx=c.getContext('2d',{willReadFrequently:true});
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,nw,nh);
+  ctx.translate(nw/2,nh/2);ctx.rotate(r);ctx.drawImage(src,-w/2,-h/2);
+  return c;
+}
+/* Enderezado automático por perfil de proyección (JS puro; sin dependencias). */
+function piAutoDeskew(){
+  var st=S.plano, stat=document.getElementById('pi-skew-stat');
+  if(!st||!st.baseCanvas)return;
+  if(stat)stat.textContent='Analizando inclinación…';
+  try{
+    var g=piGrayPixels(st.baseCanvas,600);
+    var ang=PI.estimateSkew(g.pix,g.w,g.h,8,0.2);
+    if(Math.abs(ang)<0.3){ if(stat)stat.textContent='Ya está derecho (≈ 0°).'; return; }
+    st.baseCanvas=piRotateCanvasDeg(st.baseCanvas,ang);
+    st.crop=null; piMountPreview();
+    if(stat)stat.textContent='Inclinación corregida (≈ '+Math.abs(ang).toFixed(1)+'°)';
+  }catch(e){ if(stat)stat.textContent='No se pudo enderezar automáticamente.'; console.error(e); }
+}
 function piCropToggle(){piToast('Arrastre sobre la imagen para definir el recorte.',false,2500);}
 function piCropClear(){S.plano.crop=null;piMountPreview();}
 
