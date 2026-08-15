@@ -193,6 +193,20 @@ const planoPreviewOk = await (async () => {
 })().catch((e) => { notas.push('importador de plano: ' + String(e).slice(0, 160)); return false; });
 planoPreviewOk ? ok('PDF renderizado en el paso Preparar') : fallo('el asistente no mostró la vista previa del plano');
 
+console.log('7b) Detección automática de cuadrícula (perfiles de proyección)');
+const gridOk = await page.evaluate(() => {
+  const w = 400, h = 300, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+  [60, 120, 180, 240, 300].forEach((x) => { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); });
+  [50, 110, 170, 230].forEach((y) => { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); });
+  const r = piDetectGrid(c);
+  return { v: r.vX.length, h: r.hY.length, n: r.intersections.length };
+});
+(gridOk.v === 5 && gridOk.h === 4 && gridOk.n === 20)
+  ? ok('cuadrícula 5×4 detectada en lienzo real (' + gridOk.n + ' intersecciones)')
+  : fallo('detección de cuadrícula en navegador: ' + JSON.stringify(gridOk));
+
 console.log('8) Registro de errores runtime');
 const rep = await page.evaluate(() => window.btmmReporteErrores(false));
 rep && rep.herramienta === 'BTMM-Visados' ? ok(`reporte generado (${rep.totalErrores} errores registrados)`) : fallo('btmmReporteErrores no devolvió reporte');

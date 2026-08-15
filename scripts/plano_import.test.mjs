@@ -216,5 +216,53 @@ t('detecta -2.5° (±0.5)', () => { const a = PI.estimateSkew(makeSkewImg(200, 2
 t('imagen derecha → ~0°', () => { const a = PI.estimateSkew(makeSkewImg(200, 200, 0, 20), 200, 200, 8, 0.25); assert(near(a, 0, 0.5), 'a=' + a); });
 t('imagen vacía → 0 (sin datos)', () => assert(PI.estimateSkew(new Uint8Array(200 * 200).fill(255), 200, 200) === 0));
 
+console.log('10) cluster1D — agrupación de posiciones de línea');
+t('agrupa por cercanía y promedia el centro', () => {
+  const c = PI.cluster1D([10, 11, 50, 51, 52, 90], 5);
+  assert.strictEqual(c.length, 3);
+  assert(near(c[0].pos, 10.5) && c[0].n === 2, 'c0=' + JSON.stringify(c[0]));
+  assert(near(c[1].pos, 51) && c[1].n === 3, 'c1=' + JSON.stringify(c[1]));
+  assert(near(c[2].pos, 90) && c[2].n === 1, 'c2=' + JSON.stringify(c[2]));
+});
+t('lista vacía → []', () => assert.strictEqual(PI.cluster1D([], 5).length, 0));
+t('desordenada se ordena antes de agrupar', () => {
+  const c = PI.cluster1D([52, 10, 90, 11, 50, 51], 5);
+  assert(c.length === 3 && near(c[0].pos, 10.5) && near(c[2].pos, 90));
+});
+
+console.log('11) detectGridLines — cuadrícula por perfiles de proyección');
+function makeGridImg(w, h, xs, ys, thick, bg, ink) {
+  bg = bg == null ? 255 : bg; ink = ink == null ? 0 : ink; thick = thick || 1;
+  const g = new Uint8Array(w * h).fill(bg);
+  xs.forEach(x => { for (let t = 0; t < thick; t++) { const xx = x + t; if (xx < 0 || xx >= w) continue; for (let y = 0; y < h; y++) g[y * w + xx] = ink; } });
+  ys.forEach(y => { for (let t = 0; t < thick; t++) { const yy = y + t; if (yy < 0 || yy >= h) continue; for (let x = 0; x < w; x++) g[yy * w + x] = ink; } });
+  return g;
+}
+t('5 verticales × 4 horizontales → 20 intersecciones', () => {
+  const g = makeGridImg(400, 300, [60, 120, 180, 240, 300], [50, 110, 170, 230], 2);
+  const r = PI.detectGridLines(g, 400, 300);
+  assert.strictEqual(r.vX.length, 5, 'vX=' + r.vX.length + ' (' + r.vX + ')');
+  assert.strictEqual(r.hY.length, 4, 'hY=' + r.hY.length + ' (' + r.hY + ')');
+  assert.strictEqual(r.intersections.length, 20, 'inter=' + r.intersections.length);
+  assert(near(r.vX[0], 60.5, 1) && near(r.hY[0], 50.5, 1), 'pos=' + r.vX[0] + ',' + r.hY[0]);
+  assert(r.inkDark === true, 'inkDark debería ser true en fondo blanco');
+});
+t('texto/manchas cortas no generan líneas falsas', () => {
+  const g = makeGridImg(400, 300, [60, 120, 180, 240, 300], [50, 110, 170, 230], 2);
+  for (let y = 200; y < 220; y++) for (let x = 20; x < 60; x++) g[y * 400 + x] = 0;   // bloque 40×20
+  const r = PI.detectGridLines(g, 400, 300);
+  assert(r.vX.length === 5 && r.hY.length === 4, 'v=' + r.vX.length + ' h=' + r.hY.length);
+});
+t('escaneo invertido (líneas claras sobre fondo oscuro)', () => {
+  const g = makeGridImg(400, 300, [60, 120, 180, 240, 300], [50, 110, 170, 230], 2, 0, 255);
+  const r = PI.detectGridLines(g, 400, 300);
+  assert(r.inkDark === false, 'inkDark debería ser false');
+  assert(r.vX.length === 5 && r.hY.length === 4, 'v=' + r.vX.length + ' h=' + r.hY.length);
+});
+t('imagen en blanco → sin líneas', () => {
+  const r = PI.detectGridLines(new Uint8Array(200 * 200).fill(255), 200, 200);
+  assert(r.vX.length === 0 && r.hY.length === 0, 'v=' + r.vX.length + ' h=' + r.hY.length);
+});
+
 console.log('\nRESULTADO: ' + pass + ' ok, ' + fail + ' fallo(s)');
 process.exit(fail ? 1 : 0);

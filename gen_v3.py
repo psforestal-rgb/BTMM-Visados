@@ -765,7 +765,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-10-deskew-auto-v47';
+const APP_VERSION='2026-08-15-cuadricula-auto-v48';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6217,6 +6217,62 @@ PI.estimateSkew=function(pix, w, h, maxDeg, stepDeg){
   }
   return best;
 };
+/* Agrupa valores 1-D próximos (p. ej. posiciones de líneas) en clústeres;
+   devuelve el centro y el soporte (nº de miembros) de cada uno. */
+PI.cluster1D=function(vals, tol){
+  var a=vals.slice().sort(function(x,y){return x-y;}), out=[], s=0, c=0, last=null;
+  for(var i=0;i<a.length;i++){
+    if(last!==null && a[i]-last>tol){ out.push({pos:s/c,n:c}); s=0; c=0; }
+    s+=a[i]; c++; last=a[i];
+  }
+  if(c)out.push({pos:s/c,n:c});
+  return out;
+};
+/* Detecta la cuadrícula cartográfica por perfiles de proyección (sin dependencias
+   externas ni descargas; funciona en file://). Sobre una imagen ENDEREZADA (ejes
+   rectos), las líneas horizontales y verticales entintan casi por completo su fila
+   o columna: se binariza por Otsu, se acumula la tinta por fila y por columna, y se
+   toman los picos que abarcan gran parte del ancho/alto; los picos contiguos se
+   fusionan. Devuelve posiciones de línea (vX, hY) y sus intersecciones, en
+   coordenadas de la imagen recibida. gray: intensidades 0..255 (fila-mayor), w*h. */
+PI.detectGridLines=function(gray, w, h, opts){
+  opts=opts||{}; var total=w*h;
+  var hist=new Array(256); for(var q=0;q<256;q++)hist[q]=0;
+  for(var i=0;i<total;i++)hist[gray[i]&255]++;
+  var sum=0; for(var k=0;k<256;k++)sum+=k*hist[k];
+  var sumB=0,wB=0,maxVar=-1,thr=127;
+  for(var t=0;t<256;t++){
+    wB+=hist[t]; if(wB===0)continue;
+    var wF=total-wB; if(wF===0)break;
+    sumB+=t*hist[t];
+    var mB=sumB/wB, mF=(sum-sumB)/wF, bt=wB*wF*(mB-mF)*(mB-mF);
+    if(bt>maxVar){maxVar=bt;thr=t;}
+  }
+  var darkCount=0; for(var d=0;d<=thr;d++)darkCount+=hist[d];
+  var inkDark = darkCount<=total-darkCount;   // la tinta (líneas) es la clase minoritaria
+  var rowSum=new Float64Array(h), colSum=new Float64Array(w);
+  for(var y=0;y<h;y++){
+    var base=y*w, rs=0;
+    for(var x=0;x<w;x++){ var v=gray[base+x], ink=inkDark?(v<=thr):(v>thr); if(ink){rs++;colSum[x]++;} }
+    rowSum[y]=rs;
+  }
+  var maxR=0,maxC=0;
+  for(var y2=0;y2<h;y2++)if(rowSum[y2]>maxR)maxR=rowSum[y2];
+  for(var x2=0;x2<w;x2++)if(colSum[x2]>maxC)maxC=colSum[x2];
+  var peakFrac=opts.peakFrac!=null?opts.peakFrac:0.6;
+  var spanFrac=opts.spanFrac!=null?opts.spanFrac:0.35;
+  var thrRow=Math.max(peakFrac*maxR, spanFrac*w);
+  var thrCol=Math.max(peakFrac*maxC, spanFrac*h);
+  var candY=[],candX=[];
+  for(var y3=0;y3<h;y3++)if(rowSum[y3]>=thrRow)candY.push(y3);
+  for(var x3=0;x3<w;x3++)if(colSum[x3]>=thrCol)candX.push(x3);
+  var tolY=Math.max(2,Math.round(h*0.01)), tolX=Math.max(2,Math.round(w*0.01));
+  var HY=PI.cluster1D(candY,tolY).map(function(c){return c.pos;});
+  var VX=PI.cluster1D(candX,tolX).map(function(c){return c.pos;});
+  var inter=[];
+  VX.forEach(function(px){HY.forEach(function(py){inter.push([px,py]);});});
+  return {vX:VX,hY:HY,intersections:inter,thr:thr,inkDark:inkDark};
+};
 PI.transform=function(ring, dx, dy, rotDeg, center){
   var c=center||PI.centroid(ring);
   var r=(rotDeg||0)*Math.PI/180, cos=Math.cos(r), sin=Math.sin(r);
@@ -6435,7 +6491,7 @@ function piNewState(){
     adjust:{dx:0,dy:0,rot:0},adjHist:[],map:null,mapLayer:null,worker:null,
     planoAreaHa:null,build:null,locMethod:'coords',anchor:null,gridPts:[],cancelOCR:false,
     located:false,crsConfirmed:false,gridCrs:'EPSG:5367',gridPredioPx:null,shapeVerdict:null,
-    pdfTextLines:null,pdfNative:false};
+    pdfTextLines:null,pdfNative:false,gridDetected:null};
 }
 
 function openPlanoImport(){
@@ -7104,6 +7160,7 @@ function piSetLoc(m){
     st.located=false;
     p.innerHTML='<div class="pi-note">1) Elija el CRS de la cuadrícula. 2) Marque <b>≥2 intersecciones</b> (clic + coordenadas). 3) Marque la <b>posición del predio</b> en el plano. Se estimará una ubicación aproximada por transformación de similitud (escala y orientación reales).</div>'+
       '<div class="pi-row">CRS de la cuadrícula: <select class="pi-in" id="pi-grid-crs" onchange="S.plano.gridCrs=this.value">'+PI_CRS_OPTS+'</select></div>'+
+      '<div class="pi-row"><button class="pi-tool" onclick="piAutoGrid()">🔍 Detectar cuadrícula (auto)</button> <span id="pi-grid-auto-stat" style="font-size:12px;color:#9db4d6"></span></div>'+
       '<div class="pi-row"><button class="pi-tool" id="pi-grid-mode-i" onclick="piGridMode(\'inter\')">＋ Marcar intersección</button>'+
       '<button class="pi-tool" id="pi-grid-mode-p" onclick="piGridMode(\'predio\')">◎ Marcar posición del predio</button>'+
       ' <span id="pi-grid-stat">0 intersecciones · predio sin marcar</span></div>'+
@@ -7130,14 +7187,42 @@ function piApplyAmarre(){
 }
 function piGridMode(m){S.plano._gridClickMode=m;piToast(m==='predio'?'Haga clic en la posición del predio dentro del plano.':'Haga clic en una intersección de la cuadrícula.',false,2500);
   ['i','p'].forEach(function(k){var b=document.getElementById('pi-grid-mode-'+k);if(b)b.style.outline=(k==='i'&&m==='inter')||(k==='p'&&m==='predio')?'2px solid #f3e3a3':'';});}
+/* Extrae la escala de grises del lienzo de trabajo y detecta la cuadrícula por
+   perfiles de proyección (sin dependencias ni descargas; funciona en file://). */
+function piDetectGrid(canvas){
+  var ctx=canvas.getContext('2d',{willReadFrequently:true});
+  var im=ctx.getImageData(0,0,canvas.width,canvas.height), d=im.data, n=canvas.width*canvas.height;
+  var gray=new Uint8Array(n);
+  for(var i=0;i<n;i++){ var j=i*4; gray[i]=(d[j]*0.299+d[j+1]*0.587+d[j+2]*0.114)|0; }
+  return PI.detectGridLines(gray, canvas.width, canvas.height);
+}
+function piAutoGrid(){
+  var st=S.plano, stat=document.getElementById('pi-grid-auto-stat');
+  if(stat)stat.textContent='Detectando cuadrícula…';
+  setTimeout(function(){
+    try{
+      var g=piDetectGrid(piWorkingCanvas());
+      if(g.vX.length<2||g.hY.length<2){ st.gridDetected=null; piMountGrid();
+        if(stat)stat.textContent='No se detectó una cuadrícula clara. Use «Enderezar auto», recorte al área cuadriculada y reintente, o marque a mano.'; return; }
+      st.gridDetected=g.intersections; piMountGrid();
+      if(stat)stat.textContent='Detectadas '+g.vX.length+'×'+g.hY.length+' líneas · '+g.intersections.length+' intersecciones (●). Haga clic sobre una para introducir su coordenada.';
+    }catch(e){ st.gridDetected=null; if(stat)stat.textContent='No se pudo detectar automáticamente: '+piEsc(e.message)+'. Marque a mano.'; console.error(e); }
+  },30);
+}
 function piMountGrid(){
   var st=S.plano,wrap=document.getElementById('pi-cw');if(!wrap)return;
   var base=piWorkingCanvas();var maxW=Math.min(900,wrap.parentElement.clientWidth-4);var sc=Math.min(1,maxW/base.width);st.dispScale=sc;
-  var disp=document.createElement('canvas');disp.width=Math.round(base.width*sc);disp.height=Math.round(base.height*sc);disp.getContext('2d').drawImage(base,0,0,disp.width,disp.height);
+  var disp=document.createElement('canvas');disp.width=Math.round(base.width*sc);disp.height=Math.round(base.height*sc);
+  var dctx=disp.getContext('2d');dctx.drawImage(base,0,0,disp.width,disp.height);
+  if(st.gridDetected&&st.gridDetected.length){
+    dctx.strokeStyle='#f3e3a3';dctx.lineWidth=1.5;
+    st.gridDetected.forEach(function(pt){dctx.beginPath();dctx.arc(pt[0]*sc,pt[1]*sc,4,0,Math.PI*2);dctx.stroke();});
+  }
   wrap.innerHTML='';wrap.appendChild(disp);wrap.style.width=disp.width+'px';
   disp.onclick=function(ev){var r=disp.getBoundingClientRect();var x=(ev.clientX-r.left)/sc,y=(ev.clientY-r.top)/sc;
-    if(st._gridClickMode==='predio'){st.gridPredioPx=[x,y];piGridCompute();piGridRefresh();}
-    else piGridPrompt(x,y);};
+    if(st._gridClickMode==='predio'){st.gridPredioPx=[x,y];piGridCompute();piGridRefresh();return;}
+    if(st.gridDetected&&st.gridDetected.length){var best=null,bd=1e9;st.gridDetected.forEach(function(qq){var dd=Math.hypot(qq[0]-x,qq[1]-y);if(dd<bd){bd=dd;best=qq;}});if(best&&bd<30/sc){x=best[0];y=best[1];}}
+    piGridPrompt(x,y);};
 }
 function piGridPrompt(x,y){
   var st=S.plano, crsLabel=st.gridCrs;
