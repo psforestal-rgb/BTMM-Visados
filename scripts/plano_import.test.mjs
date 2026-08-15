@@ -403,5 +403,36 @@ t('similarityResiduals detecta un punto desajustado', () => {
   assert(rr.res[3] > 1, 'residual: ' + rr.res[3]);
 });
 
+console.log('19) matchPolygons — concordancia de forma (registro por similitud)');
+function xform(ring, s, deg, tx, ty) {
+  var r = deg * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
+  return ring.map(function (p) { return [s * (c * p[0] - sn * p[1]) + tx, s * (sn * p[0] + c * p[1]) + ty]; });
+}
+const SQ = [[0, 0], [10, 0], [10, 10], [0, 10]];
+const LSHAPE = [[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]];
+t('mismo cuadrado transformado (escala 2, giro 90°) → rmse≈0', () => {
+  const r = PI.matchPolygons(SQ, xform(SQ, 2, 90, 100, 50));
+  assert(r && r.rmse < 1e-6, 'rmse=' + (r && r.rmse));
+});
+t('otro vértice inicial + sentido inverso → casa (rmse≈0)', () => {
+  const B0 = xform(SQ, 1.5, 33, -20, 5); const B = B0.slice(2).concat(B0.slice(0, 2)).reverse();
+  assert(PI.matchPolygons(SQ, B).rmse < 1e-4);
+});
+t('L consigo misma transformada → rmse≈0', () => {
+  assert(PI.matchPolygons(LSHAPE, xform(LSHAPE, 0.7, -50, 3, -8)).rmse < 1e-4);
+});
+t('formas distintas (cuadrado vs L) → rmsePct alto', () => {
+  assert(PI.matchPolygons(SQ, LSHAPE).rmsePct > 0.05);
+});
+t('ruido leve en un vértice → rmse>0 pero rmsePct pequeño', () => {
+  const B = xform(SQ, 2, 10, 5, 5).map((p, i) => (i === 1 ? [p[0] + 0.3, p[1]] : p));
+  const r = PI.matchPolygons(SQ, B);
+  assert(r.rmse > 0 && r.rmsePct < 0.05, 'rmse=' + r.rmse + ' pct=' + r.rmsePct);
+});
+t('resampleClosed devuelve K puntos sobre el perímetro', () => {
+  const rs = PI.resampleClosed(SQ, 40);
+  assert(rs.length === 40, 'len=' + rs.length);
+});
+
 console.log('\nRESULTADO: ' + pass + ' ok, ' + fail + ' fallo(s)');
 process.exit(fail ? 1 : 0);

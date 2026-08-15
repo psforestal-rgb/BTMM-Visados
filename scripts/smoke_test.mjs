@@ -278,6 +278,18 @@ const ransac = await page.evaluate(() => {
   ? ok('RANSAC descarta el punto atípico (rmse≈0, escala 2)')
   : fallo('ajuste robusto: ' + JSON.stringify(ransac));
 
+console.log('7g) Concordancia de forma (matchPolygons)');
+const match = await page.evaluate(() => {
+  const sq = [[0, 0], [10, 0], [10, 10], [0, 10]];
+  const r = (deg) => { const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return sq.map((p) => [2 * (c * p[0] - s * p[1]) + 30, 2 * (s * p[0] + c * p[1]) + 40]); };
+  const same = PI.matchPolygons(sq, r(90));           // misma forma, girada+escalada
+  const diff = PI.matchPolygons(sq, [[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]]);  // forma distinta
+  return { same: same.rmse, diffPct: diff.rmsePct };
+});
+(match.same < 1e-6 && match.diffPct > 0.05)
+  ? ok('matchPolygons: misma forma rmse≈0, forma distinta rmsePct alto')
+  : fallo('matchPolygons: ' + JSON.stringify(match));
+
 console.log('8) Registro de errores runtime');
 const rep = await page.evaluate(() => window.btmmReporteErrores(false));
 rep && rep.herramienta === 'BTMM-Visados' ? ok(`reporte generado (${rep.totalErrores} errores registrados)`) : fallo('btmmReporteErrores no devolvió reporte');
