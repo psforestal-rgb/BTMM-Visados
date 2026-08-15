@@ -741,7 +741,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-15-trazar-contorno-v49';
+const APP_VERSION='2026-08-15-decodificador-geometrico-v50';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6143,6 +6143,120 @@ PI.diagnoseClosure=function(legs, origin){
   var mE=x-o[0], mN=y-o[1], mAbs=Math.hypot(mE,mN);
   return {misE:mE, misN:mN, misAbs:mAbs, perimeter:per, rel:mAbs>1e-9?per/mAbs:Infinity};
 };
+/* Lecturas alternativas de un número por confusiones típicas de OCR (0↔8/6/9,
+   1↔7/4, 5↔6/8, 3↔8/9, 9↔4/8/0…), una sustitución de un dígito por vez. Devuelve
+   {str,value,penalty} sin repetir el valor original. Base del decodificador
+   geométrico: se prueban estas lecturas contra el cierre / la contención en CR. */
+PI.numericVariants=function(str, maxVariants){
+  maxVariants=maxVariants||60;
+  var CONF={'0':['8','6','9'],'1':['7','4'],'2':['7','1'],'3':['8','9','5'],
+    '4':['9','1'],'5':['6','8','3','9'],'6':['5','8','0'],'7':['1','2'],
+    '8':['0','6','3','9'],'9':['4','8','3','0','7']};
+  var s=String(str==null?'':str), base=PI.parseNumber(s), out=[], seen={};
+  for(var i=0;i<s.length;i++){
+    var ch=s[i], alt=CONF[ch]; if(!alt)continue;
+    for(var k=0;k<alt.length;k++){
+      var cand=s.slice(0,i)+alt[k]+s.slice(i+1), val=PI.parseNumber(cand);
+      if(!isFinite(val)||seen[cand]||(isFinite(base)&&val===base))continue;
+      seen[cand]=1; out.push({str:cand,value:val,penalty:1});
+      if(out.length>=maxVariants)return out;
+    }
+  }
+  return out;
+};
+/* Decodificador de cierre (derroteros). Busca una lectura alternativa de UN token
+   —distancia o azimut— que haga cerrar el polígono. El cierre no identifica el
+   error de forma única, así que entre todas las lecturas que cierran se elige la de
+   MENOR cambio relativo y se informa cuántas alternativas cierran; siempre para
+   confirmación humana, nunca se aplica sola. */
+PI.suggestClosureFix=function(rows, type, opts){
+  opts=opts||{};
+  var entries=[];
+  for(var i=0;i<rows.length;i++){
+    var b=PI.parseBearing(rows[i].dir), d=PI.parseNumber(rows[i].dist);
+    if(b&&isFinite(d)&&d>0)entries.push({i:i,az:b.azimuth,d:d,row:rows[i]});
+  }
+  if(entries.length<3)return null;
+  var legs=entries.map(function(e){return {azimuth:e.az,distance:e.d};});
+  var per=0; legs.forEach(function(l){per+=l.distance;});
+  var base=PI.diagnoseClosure(legs).misAbs;
+  if(base<=Math.max(0.5,per*0.001))return {ok:true,closure:base,perimeter:per};
+  var tolClose=Math.max(0.5,per*0.002), closers=[], rowsHit={};
+  function trial(k,field,fromStr,fromVal,str,value){
+    var key=field==='dist'?'distance':'azimuth', save=legs[k][key];
+    legs[k][key]=value; var c=PI.diagnoseClosure(legs).misAbs; legs[k][key]=save;
+    if(c<=tolClose){
+      var rel=Math.abs(value-fromVal)/Math.max(Math.abs(fromVal),1e-6);
+      closers.push({rowIndex:entries[k].i,field:field,from:fromStr,to:str,toValue:value,closureBefore:base,closureAfter:c,rel:rel,perimeter:per});
+      rowsHit[entries[k].i]=1;
+    }
+  }
+  for(var k=0;k<entries.length;k++){
+    var dv=PI.numericVariants(entries[k].row.dist);
+    for(var j=0;j<dv.length;j++)if(dv[j].value>0)trial(k,'dist',entries[k].row.dist,entries[k].d,dv[j].str,dv[j].value);
+    if(type==='azimut'){
+      var av=PI.numericVariants(entries[k].row.dir);
+      for(var m=0;m<av.length;m++){var b2=PI.parseBearing(av[m].str);if(b2&&isFinite(b2.azimuth))trial(k,'dir',entries[k].row.dir,entries[k].az,av[m].str,b2.azimuth);}
+    }
+  }
+  if(!closers.length)return {ok:false,closure:base,perimeter:per,suggestion:null};
+  closers.sort(function(a,b){return a.rel-b.rel||a.closureAfter-b.closureAfter;});
+  var best=closers[0]; best.alternatives=Object.keys(rowsHit).length;
+  return {ok:false,closure:base,perimeter:per,suggestion:best};
+};
+/* Decodificador de coordenadas. Detecta un vértice atípico (un dígito de más/menos
+   crea un pico) por su desvío respecto a la mediana y propone la lectura de un
+   dígito que lo devuelve a la línea de sus vecinos. Conservador (umbral alto) y
+   siempre a confirmar. */
+PI.suggestCoordFix=function(rows, opts){
+  opts=opts||{};
+  var entries=[];
+  for(var i=0;i<rows.length;i++){
+    var e=PI.parseCoord(rows[i].e), n=PI.parseCoord(rows[i].n);
+    if(isFinite(e)&&isFinite(n))entries.push({i:i,e:e,n:n,row:rows[i]});
+  }
+  var m=entries.length; if(m<4)return null;
+  var P=entries.map(function(o){return [o.e,o.n];});
+  function detour(k,pt){
+    var a=P[(k-1+m)%m], b=P[(k+1)%m], p=pt||P[k];
+    return Math.hypot(p[0]-a[0],p[1]-a[1])+Math.hypot(b[0]-p[0],b[1]-p[1])-Math.hypot(b[0]-a[0],b[1]-a[1]);
+  }
+  var edges=[]; for(var q=0;q<m;q++)edges.push(Math.hypot(P[(q+1)%m][0]-P[q][0],P[(q+1)%m][1]-P[q][1]));
+  var medEdge=edges.slice().sort(function(a,b){return a-b;})[Math.floor(m/2)]||1;
+  var det=[]; for(var k=0;k<m;k++)det.push(detour(k));
+  var medDet=det.slice().sort(function(a,b){return a-b;})[Math.floor(m/2)]||0;
+  var kMax=0; for(var kk=1;kk<m;kk++)if(det[kk]>det[kMax])kMax=kk;
+  var dMax=det[kMax];
+  if(dMax<3.5*(medDet+1e-9)||dMax<0.15*medEdge)return {ok:true};
+  var ent=entries[kMax], best=null;
+  function tryField(field,orig){
+    var vs=PI.numericVariants(orig);
+    for(var j=0;j<vs.length;j++){
+      var pt=field==='e'?[vs[j].value,ent.n]:[ent.e,vs[j].value];
+      var nd=detour(kMax,pt);
+      if(nd<dMax*0.3&&nd<=medDet*1.2+1e-6&&(!best||nd<best.newDetour))
+        best={rowIndex:ent.i,field:field,from:orig,to:vs[j].str,toValue:vs[j].value,oldDetour:dMax,newDetour:nd};
+    }
+  }
+  tryField('e',ent.row.e); tryField('n',ent.row.n);
+  return {ok:false,outlierRow:ent.i,detour:dMax,medianDetour:medDet,suggestion:best};
+};
+/* Semáforo de confianza por evidencia. Verde: todo coherente. Ámbar: un único
+   punto a confirmar (CRS ambiguo, cierre con corrección, vértice atípico). Rojo:
+   problema de fondo (sin datos, fuera de Costa Rica, cierre sin corrección clara). */
+PI.confidence=function(ev){
+  ev=ev||{}; var R=[];
+  if(!ev.hasData)return {level:'red',message:'Sin datos suficientes para construir el polígono.',question:'Introduzca o revise las filas.',reasons:R};
+  if(ev.inCR===false){R.push('fuera de Costa Rica');return {level:'red',message:'El polígono no cae en Costa Rica con el CRS elegido.',question:'Revise el CRS o las coordenadas.',reasons:R};}
+  if(ev.crsNeedsUser&&!ev.crsConfirmed){R.push('CRS ambiguo');return {level:'amber',message:'El sistema de coordenadas es ambiguo.',question:'Confirme el CRS del plano.',reasons:R};}
+  if(!ev.fromCoords&&isFinite(ev.closureAbs)&&ev.closureAbs>Math.max(0.5,(ev.perimeter||0)*0.01)){
+    R.push('cierre '+ev.closureAbs.toFixed(2)+' m');
+    if(ev.suggestion)return {level:'amber',message:'El polígono no cierra ('+ev.closureAbs.toFixed(2)+' m).',question:ev.suggestionText||'Aplicar la corrección sugerida.',reasons:R};
+    return {level:'red',message:'El polígono no cierra ('+ev.closureAbs.toFixed(2)+' m) y no hay una corrección clara.',question:'Revise distancias y rumbos.',reasons:R};
+  }
+  if(ev.suggestion&&ev.fromCoords){R.push('vértice atípico');return {level:'amber',message:'Un vértice parece atípico.',question:ev.suggestionText||'Revisar el vértice sugerido.',reasons:R};}
+  return {level:'green',message:'Datos consistentes: CRS plausible'+(ev.inCR?', dentro de Costa Rica':'')+(ev.fromCoords?', polígono cerrado por coordenadas':', cierre correcto')+'.',question:null,reasons:R};
+};
 /* Compensación por regla de la brújula (Bowditch): reparte el cierre en proporción
    a la longitud de cada lado. Sugerencia de referencia; nunca se aplica sola. */
 PI.compensateBowditch=function(legs, origin){
@@ -7151,7 +7265,52 @@ function piBuildStats(){
     '<tr><th>Error de cierre</th><td>'+(b.fromCoords?'polígono cerrado por coordenadas':b.closureAbs.toFixed(3)+' m · relativo '+rel)+'</td></tr>'+
     (diff!=null?'<tr><th>Δ vs área del plano</th><td>'+(diff>=0?'+':'')+diff.toFixed(4)+' ha</td></tr>':'')+
     '</tbody></table>'+
-    piClosureExtraHTML(b,per);
+    piClosureExtraHTML(b,per)+piDecodeHTML(b,per);
+}
+/* Decodificador geométrico: semáforo de confianza + sugerencia de UNA corrección
+   de lectura (OCR) que haga cerrar el polígono o devolver un vértice atípico a su
+   sitio. Solo sugiere; la aplicación es explícita y verificable por el usuario. */
+function piDecodeHTML(b,per){
+  var st=S.plano, sug=null, sugText='';
+  try{
+    if(b.fromCoords&&st.extractType==='coords'){
+      var rc=PI.suggestCoordFix(st.rows);
+      if(rc&&rc.suggestion){sug={kind:'coord',s:rc.suggestion};
+        sugText='Vértice '+(rc.suggestion.rowIndex+1)+': '+(rc.suggestion.field==='e'?'Este':'Norte')+' '+piEsc(rc.suggestion.from)+' → '+piEsc(rc.suggestion.to)+' (corrige un vértice atípico).';}
+    }else if(!b.fromCoords){
+      var rr=PI.suggestClosureFix(st.rows, st.extractType);
+      if(rr&&rr.suggestion){var s2=rr.suggestion; sug={kind:'closure',s:s2};
+        sugText='Línea '+(s2.rowIndex+1)+': '+(s2.field==='dist'?'distancia':'rumbo/azimut')+' '+piEsc(s2.from)+' → '+piEsc(s2.to)+' (el cierre pasa de '+s2.closureBefore.toFixed(2)+' m a '+s2.closureAfter.toFixed(2)+' m'+(s2.alternatives>1?'; hay '+s2.alternatives+' lecturas que cierran, se muestra la de menor cambio':'')+').';}
+    }
+  }catch(e){console.warn('decodificador:',e);}
+  st._suggestion=sug;
+  var inCR=null;
+  try{var cen=PI.centroid(st.workRingM), ll=proj4('EPSG:5367','EPSG:4326',[cen[0],cen[1]]); inCR=PI.inCostaRica(ll[0],ll[1]);}catch(e){}
+  var ev={hasData:!!(st.workRingM&&st.workRingM.length>=3),fromCoords:b.fromCoords,
+    crsNeedsUser:!!(st.crsInfo&&st.crsInfo.needsUser),crsConfirmed:!!st.crsConfirmed,
+    inCR:inCR,closureAbs:b.closureAbs,perimeter:per,suggestion:sug?sug.s:null,suggestionText:sugText};
+  var conf=PI.confidence(ev);
+  var color=conf.level==='green'?'#bff0cf':(conf.level==='amber'?'#f3e3a3':'#ffc9c9');
+  var dot=conf.level==='green'?'🟢':(conf.level==='amber'?'🟡':'🔴');
+  var html='<div class="pi-row" style="margin-top:8px"><span style="color:'+color+'">'+dot+' '+piEsc(conf.message)+'</span></div>';
+  var sig=sug?(sug.kind+':'+sug.s.rowIndex+':'+sug.s.field+':'+sug.s.to):null;
+  if(sug&&st._suggestDismissedSig!==sig){
+    html+='<div class="pi-note pi-warn" style="margin-top:4px"><b>Sugerencia de lectura:</b> '+piEsc(sugText)+' <b>Verifíquela contra el plano antes de aplicar.</b>'+
+      '<div class="pi-row" style="margin-top:4px"><button class="pi-tool" onclick="piApplySuggestion()">✔ Aplicar</button> <button class="pi-tool" onclick="piDismissSuggestion()">Descartar</button></div></div>';
+  }
+  return html;
+}
+function piApplySuggestion(){
+  var st=S.plano, sug=st._suggestion; if(!sug||!st.rows[sug.s.rowIndex])return;
+  var s=sug.s, field=sug.kind==='coord'?s.field:(s.field==='dist'?'dist':'dir');
+  st.rows[s.rowIndex][field]=s.to; st._suggestDismissedSig=null; st._suggestion=null;
+  piFillTable(); piDoBuild();
+  piToast('Corrección aplicada a la fila '+(s.rowIndex+1)+'. Verifíquela contra el plano.',false,3500);
+}
+function piDismissSuggestion(){
+  var st=S.plano, sug=st._suggestion; if(!sug)return;
+  st._suggestDismissedSig=sug.kind+':'+sug.s.rowIndex+':'+sug.s.field+':'+sug.s.to;
+  piBuildStats();
 }
 /* Aviso de cierre + compensación de referencia (solo derroteros). El cierre no
    identifica la observación culpable, así que no se acusa una línea concreta. */

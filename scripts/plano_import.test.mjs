@@ -333,5 +333,49 @@ t('georreferencia con similitud (píxel→E,N con reflexión N-S)', () => {
   assert(near(a, 200 * 160, 1), 'área m²=' + a);
 });
 
+console.log('14) numericVariants — lecturas alternativas por confusión de OCR');
+t('160 incluye 100 (6↔0) sin repetir el original', () => {
+  const v = PI.numericVariants('160').map((x) => x.value);
+  assert(v.includes(100) && !v.includes(160), JSON.stringify(v));
+});
+t('respeta decimales (45,8 genera variantes finitas)', () => {
+  const v = PI.numericVariants('45,8');
+  assert(v.length > 0 && v.every((x) => isFinite(x.value)), 'variantes: ' + JSON.stringify(v));
+});
+
+console.log('15) suggestClosureFix — decodificador de cierre (derroteros)');
+const sqLegs = (d) => [{ dir: '90', dist: d[0] }, { dir: '180', dist: d[1] }, { dir: '270', dist: d[2] }, { dir: '0', dist: d[3] }];
+t('cuadrado que cierra → ok:true', () => {
+  const r = PI.suggestClosureFix(sqLegs(['100', '100', '100', '100']), 'azimut');
+  assert(r && r.ok === true, JSON.stringify(r));
+});
+t('distancia mal leída (160↔100) → menor cambio corrige el lado inflado', () => {
+  const r = PI.suggestClosureFix(sqLegs(['100', '100', '160', '100']), 'azimut');
+  assert(r && r.suggestion, JSON.stringify(r));
+  assert(r.suggestion.field === 'dist' && r.suggestion.closureAfter < 0.5, JSON.stringify(r.suggestion));
+  assert(r.suggestion.rowIndex === 2 && near(r.suggestion.toValue, 100), 'elegida: ' + JSON.stringify(r.suggestion));
+  assert(r.suggestion.alternatives === 2, 'alternativas=' + r.suggestion.alternatives);
+});
+
+console.log('16) suggestCoordFix — decodificador de coordenadas');
+const rect8 = [[0, 0], [100, 0], [200, 0], [200, 50], [200, 100], [100, 100], [0, 100], [0, 50]];
+const toRows = (pts) => pts.map((p) => ({ e: String(p[0]), n: String(p[1]) }));
+t('polígono correcto → sin atípico (ok:true)', () => {
+  const r = PI.suggestCoordFix(toRows(rect8));
+  assert(r && r.ok === true, JSON.stringify(r));
+});
+t('dígito extra (E 200→290, 0↔9) → sugiere 200 en ese vértice', () => {
+  const r = PI.suggestCoordFix(toRows(rect8.map((p, i) => (i === 3 ? [290, 50] : p))));
+  assert(r && r.suggestion, JSON.stringify(r));
+  assert(r.suggestion.rowIndex === 3 && r.suggestion.field === 'e' && near(r.suggestion.toValue, 200), JSON.stringify(r.suggestion));
+});
+
+console.log('17) confidence — semáforo por evidencia');
+t('verde: todo coherente', () => assert(PI.confidence({ hasData: true, inCR: true, fromCoords: true }).level === 'green'));
+t('ámbar: CRS ambiguo', () => assert(PI.confidence({ hasData: true, inCR: true, crsNeedsUser: true }).level === 'amber'));
+t('ámbar: cierre con sugerencia', () => assert(PI.confidence({ hasData: true, inCR: true, fromCoords: false, closureAbs: 12, perimeter: 400, suggestion: {} }).level === 'amber'));
+t('rojo: fuera de Costa Rica', () => assert(PI.confidence({ hasData: true, inCR: false }).level === 'red'));
+t('rojo: cierre sin corrección', () => assert(PI.confidence({ hasData: true, inCR: true, fromCoords: false, closureAbs: 30, perimeter: 400 }).level === 'red'));
+
 console.log('\nRESULTADO: ' + pass + ' ok, ' + fail + ' fallo(s)');
 process.exit(fail ? 1 : 0);
