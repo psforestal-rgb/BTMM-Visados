@@ -264,5 +264,74 @@ t('imagen en blanco → sin líneas', () => {
   assert(r.vX.length === 0 && r.hY.length === 0, 'v=' + r.vX.length + ' h=' + r.hY.length);
 });
 
+console.log('12) simplifyDP — Douglas–Peucker sobre anillo cerrado');
+t('recta colineal → 2 puntos', () => assert.strictEqual(PI.simplifyDP([[0, 0], [1, 0], [2, 0], [3, 0]], 0.5).length, 2));
+t('cuadrado con puntos intermedios → 4 esquinas (sin vértice espurio)', () => {
+  const r = PI.simplifyDP([[0, 0], [5, 0], [10, 0], [10, 5], [10, 10], [5, 10], [0, 10], [0, 5]], 0.5);
+  assert.strictEqual(r.length, 4, 'len=' + r.length + ' ' + JSON.stringify(r));
+});
+
+console.log('13) traceContour — contorno del predio desde una semilla interior');
+function rectImg(w, h, x0, y0, x1, y1, thick) {
+  thick = thick || 2;
+  const g = new Uint8Array(w * h).fill(255);
+  const put = (x, y) => { if (x >= 0 && y >= 0 && x < w && y < h) g[y * w + x] = 0; };
+  for (let x = x0; x <= x1; x++) for (let k = 0; k < thick; k++) { put(x, y0 + k); put(x, y1 - k); }
+  for (let y = y0; y <= y1; y++) for (let k = 0; k < thick; k++) { put(x0 + k, y); put(x1 - k, y); }
+  return g;
+}
+function polyOutline(w, h, V, thick) {
+  const g = new Uint8Array(w * h).fill(255);
+  const seg = (x0, y0, x1, y1) => {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    for (let i = 0; i <= n; i++) {
+      const x = Math.round(x0 + (x1 - x0) * i / n), y = Math.round(y0 + (y1 - y0) * i / n);
+      for (let a = -(thick - 1); a <= thick - 1; a++) for (let b = -(thick - 1); b <= thick - 1; b++) {
+        const xx = x + a, yy = y + b; if (xx >= 0 && yy >= 0 && xx < w && yy < h) g[yy * w + xx] = 0;
+      }
+    }
+  };
+  for (let i = 0; i < V.length; i++) seg(V[i][0], V[i][1], V[(i + 1) % V.length][0], V[(i + 1) % V.length][1]);
+  return g;
+}
+t('rectángulo → 4 vértices, área ≈ interior', () => {
+  const w = 300, h = 220, g = rectImg(w, h, 40, 30, 240, 180, 2);
+  const r = PI.traceContour(g, w, h, [140, 100], { close: 1, tol: 3 });
+  assert(!r.leaked && r.ring && r.ring.length === 4, 'v=' + (r.ring && r.ring.length) + ' leaked=' + r.leaked);
+  const ap = Math.abs(PI.shoelaceArea(r.ring)), expect = (240 - 40 - 4) * (180 - 30 - 4);
+  assert(Math.abs(ap - expect) / expect < 0.07, 'areaPx=' + ap + ' esperado≈' + expect);
+});
+t('L (6 vértices) → 6 vértices', () => {
+  const w = 300, h = 300;
+  const g = polyOutline(w, h, [[50, 50], [250, 50], [250, 150], [150, 150], [150, 250], [50, 250]], 2);
+  const r = PI.traceContour(g, w, h, [80, 80], { close: 1, tol: 4 });
+  assert(!r.leaked && r.ring && r.ring.length === 6, 'v=' + (r.ring && r.ring.length) + ' ' + JSON.stringify(r.ring));
+});
+t('lindero abierto → leaked=true', () => {
+  const w = 200, h = 200, g = rectImg(w, h, 30, 30, 170, 170, 2);
+  for (let x = 80; x < 120; x++) for (let y = 28; y < 34; y++) g[y * w + x] = 255;   // hueco arriba
+  assert.strictEqual(PI.traceContour(g, w, h, [100, 100], { close: 0 }).leaked, true);
+});
+t('hueco pequeño se cierra con close=3', () => {
+  const w = 200, h = 200, g = rectImg(w, h, 30, 30, 170, 170, 2);
+  for (let x = 95; x < 100; x++) for (let y = 28; y < 34; y++) g[y * w + x] = 255;   // hueco 5px
+  const r = PI.traceContour(g, w, h, [100, 100], { close: 3, tol: 4 });
+  assert(!r.leaked && r.ring && r.ring.length === 4, 'v=' + (r.ring && r.ring.length) + ' leaked=' + r.leaked);
+});
+t('semilla sobre la línea → error explicativo', () => {
+  const r = PI.traceContour(rectImg(200, 200, 30, 30, 170, 170, 3), 200, 200, [30, 100], { close: 0 });
+  assert(r.ring === null && /línea/.test(r.error || ''), 'error=' + r.error);
+});
+t('georreferencia con similitud (píxel→E,N con reflexión N-S)', () => {
+  // cuadrado en píxeles; grid: 2 pares que definen 1 m/px, N hacia arriba
+  const ring = [[100, 100], [300, 100], [300, 260], [100, 260]];   // px (y hacia abajo)
+  const pairs = [{ src: [0, -0], dst: [1000, 5000] }, { src: [200, -160], dst: [1200, 5160] }];
+  const T = PI.similarityFromPairs(pairs);
+  const world = ring.map(p => PI.applySimilarity(T, [p[0], -p[1]]));
+  // área en el mundo debe ser 200*160 = 32000 m² y positiva (orientación correcta)
+  const a = Math.abs(PI.shoelaceArea(world));
+  assert(near(a, 200 * 160, 1), 'área m²=' + a);
+});
+
 console.log('\nRESULTADO: ' + pass + ' ok, ' + fail + ' fallo(s)');
 process.exit(fail ? 1 : 0);

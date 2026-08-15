@@ -207,6 +207,56 @@ const gridOk = await page.evaluate(() => {
   ? ok('cuadrícula 5×4 detectada en lienzo real (' + gridOk.n + ' intersecciones)')
   : fallo('detección de cuadrícula en navegador: ' + JSON.stringify(gridOk));
 
+console.log('7c) Trazado automático del contorno (perfil de imagen) y pasos del asistente');
+const traceOk = await page.evaluate(() => {
+  const w = 320, h = 240, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.strokeRect(50, 40, 200, 150);   // predio rectangular
+  const r = piTraceFromCanvas(c, [150, 115], { close: 1, tol: 3 });
+  const out = { v: r.ring && r.ring.length, leaked: r.leaked };
+  // pasos del asistente para el modo 'trace' (omite recuadro/OCR/tabla/forma)
+  try { S.plano = S.plano || {}; S.plano.extractType = 'trace'; out.steps = piSteps().map((s) => s[0]).join(','); } catch (e) { out.steps = 'err:' + e.message; }
+  return out;
+});
+(traceOk.v === 4 && !traceOk.leaked) ? ok('rectángulo trazado en lienzo real (4 vértices)') : fallo('trazado de contorno: ' + JSON.stringify(traceOk));
+(!traceOk.steps || traceOk.steps === 'prepare,type,build,locate,adjust,accept')
+  ? ok('pasos del asistente para trazado: ' + (traceOk.steps || 'n/d'))
+  : fallo('secuencia de pasos trace inesperada: ' + traceOk.steps);
+
+console.log('7d) Flujo trazado→cuadrícula→georreferencia→aceptar (extremo a extremo)');
+const traceFlow = await page.evaluate(() => {
+  try {
+    S.plano = piNewState();
+    S.plano.extractType = 'trace';
+    const w = 400, h = 300, c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.strokeRect(80, 60, 240, 180);   // predio 240×180 px
+    S.plano.baseCanvas = c; S.plano.name = 'synthetic'; S.plano.file = null;
+    piShowWiz();
+    PI_CUR = 'build'; piRenderStep();                       // paso de trazado
+    S.plano.traceSeed = [200, 150];
+    const res = piTraceFromCanvas(piWorkingCanvas(), [200, 150], { close: 1, tol: 3 });
+    S.plano.tracePx = res.ring;
+    S.plano.build = { vertices: res.ring.slice(), fromCoords: true, trace: true, closureAbs: 0, relClosure: Infinity };
+    PI_CUR = 'locate'; piRenderStep();                      // paso de ubicación (cuadrícula)
+    S.plano.gridCrs = 'EPSG:5367';
+    S.plano.gridPts = [{ px: 100, py: 250, e: 1000, n: 5000 }, { px: 300, py: 90, e: 1200, n: 5160 }];  // 1 m/px
+    const gc = piGridCompute();
+    PI_CUR = 'accept'; piRenderStep();                      // paso de aceptación
+    const ll = piCurrentLatLng();
+    const haNow = PI.shoelaceArea(PII_ring()) / 10000;
+    const located = S.plano.located, m = gc && gc.mPerPx;
+    piCloseWiz(); S.plano = null;
+    return { v: res.ring.length, located, m, haNow, llLen: ll.length };
+  } catch (e) { return { error: e.message + ' @ ' + String(e.stack || '').split('\n')[1] }; }
+});
+if (traceFlow.error) fallo('flujo trazado extremo a extremo: ' + traceFlow.error);
+else {
+  (traceFlow.v === 4 && traceFlow.located === true) ? ok('trazado ubicado por cuadrícula (4 vértices, located=true)') : fallo('trazado/ubicación: ' + JSON.stringify(traceFlow));
+  (Math.abs(traceFlow.m - 1) < 0.02) ? ok('escala georreferenciada ≈ 1 m/px (' + traceFlow.m.toFixed(3) + ')') : fallo('escala inesperada: ' + traceFlow.m);
+  (Math.abs(traceFlow.haNow - 236 * 176 / 10000) < 0.05) ? ok('área georreferenciada ≈ ' + traceFlow.haNow.toFixed(3) + ' ha') : fallo('área inesperada: ' + traceFlow.haNow);
+}
+
 console.log('8) Registro de errores runtime');
 const rep = await page.evaluate(() => window.btmmReporteErrores(false));
 rep && rep.herramienta === 'BTMM-Visados' ? ok(`reporte generado (${rep.totalErrores} errores registrados)`) : fallo('btmmReporteErrores no devolvió reporte');
