@@ -5,8 +5,9 @@ variantes de Claude/GPT) sobre cómo reducir al máximo los pasos manuales del
 módulo **«Importar predio desde plano»**, filtrada por las restricciones reales
 de este repositorio y mapeada al código existente.
 
-> Estado: documento de diseño / planificación. No cambia el visor. Sirve para
-> decidir el orden de implementación.
+> Estado: documento de diseño. La **Fase 1 y la Fase 2 completa, más la parte no-ML
+> de la Fase 3**, ya están implementadas y publicadas (ver «Estado de implementación»
+> más abajo). Lo único pendiente son las apuestas mayores con modelos pesados.
 
 ---
 
@@ -147,6 +148,33 @@ Reutilizan Canvas + `PI.*` + Tesseract + proj4 + Turf ya presentes.
 —*% de planos resueltos con 0 o 1 confirmación*— y no solo una demo de OCR. La
 primera descarga de PP‑OCRv5 + ORT supera ~30 MB; hay que justificar ese costo
 resolviendo una clase de planos que Tesseract + geometría realmente no resuelve.
+
+---
+
+## 5-bis. Estado de implementación (agosto 2026)
+
+Todo lo implementado es **determinista, sin dependencias nuevas y funciona en
+`file://`**; el núcleo va probado en Node (`scripts/plano_import.test.mjs`) y en
+navegador real (`scripts/smoke_test.mjs`), con `index.html` y `gen_v3.py`
+byte‑idénticos verificados en CI.
+
+| Ítem | Qué se hizo | Funciones núcleo (`PI.*`) | Versión |
+|---|---|---|---|
+| **Fase 1** (1–4) | PDF con texto nativo; CRS por evidencia + contención geográfica; error de cierre y compensación de referencia (Bowditch/Tránsito, solo mostrar); `parseCoord` robusto | `classifyCRS`, `inCostaRica`, `crsPlacesInCR`, `diagnoseClosure`, `compensate*`, `parseCoord/parseNumber/parseBearing/parseDMS` | v41–v47 |
+| **E** enderezado | «Enderezar auto» por perfil de proyección (deskew sin dependencias) | `estimateSkew` | v47 |
+| **B** cuadrícula | Detección automática de la cuadrícula por perfiles de proyección + Otsu | `detectGridLines`, `cluster1D` | v48 |
+| **A** contorno | Trazado del lindero desde una semilla (Otsu → cierre de huecos → relleno → Moore → Douglas‑Peucker), georreferenciado con la cuadrícula (con reflexión N‑S) | `traceContour`, `simplifyDP` | v49 |
+| **C/D/G/H** decodificador | Lecturas alternativas de OCR + corrección que hace **cerrar** el polígono o realinear un **vértice atípico**; semáforo de confianza verde/ámbar/rojo con «una pregunta» | `numericVariants`, `suggestClosureFix`, `suggestCoordFix`, `confidence` | v50 |
+| **B/H** registro robusto | Ajuste de cuadrícula por mínimos cuadrados + **RANSAC** (rechaza puntos mal marcados) y **RMSE** en metros como calidad | `fitSimilarityRobust`, `similarityResiduals` | v51 |
+| **F** concordancia | Verificación de **forma** del polígono calculado contra el contorno dibujado (registro por similitud invariante a giro/escala/vértice inicial/reflexión) | `matchPolygons`, `resampleClosed` | v52 |
+
+**Pendiente (solo apuestas mayores de la Fase 3):** PaddleOCR/ONNX opt‑in
+(~30 MB, requiere red, **no** `file://`) y reconocedor CTC propio. Se mantienen
+**congelados** hasta medir, sobre un corpus real de planos costarricenses, una
+clase de planos que Tesseract + geometría no resuelva (criterio de arriba). El
+registro contra vector con **rotación del overlay** (F sobre el modo de plano ya
+existente en Leaflet) queda fuera por ahora: exige un overlay rotable y aporta
+poco frente a la verificación de forma ya disponible.
 
 ---
 
