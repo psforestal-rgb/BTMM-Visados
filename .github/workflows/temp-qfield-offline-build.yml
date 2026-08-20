@@ -10,33 +10,130 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  build-imagery:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Probe SNIT imagery endpoints
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install raster tools
+        run: python -m pip install --disable-pip-version-check --no-cache-dir rasterio requests pillow numpy
+      - name: Build aligned IGN/SNIT offline orthophotos
+        shell: bash
         run: |
-          python3 - <<'PY'
-          from urllib.request import Request, urlopen
-          from urllib.error import HTTPError, URLError
-          urls = [
-            'https://geos1.snitcr.go.cr/Ortofoto2017/wmts?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0',
-            'https://geos1.snitcr.go.cr/Ortofoto2017/gwc/service/wmts?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0',
-            'https://geos1.snitcr.go.cr/Ortofoto2017/service/wmts?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0',
-            'https://geos1.snitcr.go.cr/Ortofoto2017/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1',
-            'https://geos1.snitcr.go.cr/Ortofoto2017/wms?SERVICE=WMS&REQUEST=GetCapabilities',
-          ]
-          for u in urls:
-            print('\n===',u,'===', flush=True)
-            try:
-              req=Request(u,headers={'User-Agent':'Mozilla/5.0 QGIS/3.40'})
-              with urlopen(req,timeout=60) as r:
-                data=r.read()
-                print('status',r.status,'ct',r.headers.get('content-type'),'len',len(data),'final',r.geturl())
-                print(data[:12000].decode('utf-8','replace'))
-            except HTTPError as e:
-              data=e.read()
-              print('HTTP ERROR',e.code,'ct',e.headers.get('content-type'),'len',len(data),'final',e.geturl())
-              print(data[:12000].decode('utf-8','replace'))
-            except Exception as e:
-              print('ERROR',repr(e))
+          set -euo pipefail
+          mkdir -p build/qfield_imagery
+          python - <<'PY'
+          from pathlib import Path
+          from io import BytesIO
+          import hashlib, json, math, time
+          import numpy as np
+          import requests
+          from PIL import Image
+          import rasterio
+          from rasterio.transform import from_origin
+          from rasterio.enums import Resampling
+
+          OUT=Path('build/qfield_imagery'); OUT.mkdir(parents=True,exist_ok=True)
+          BASE='https://geos1.snitcr.go.cr/Ortofoto2017/wms'
+          LAYER='ortofoto2017_5000_altaresolucion'
+          CRS='EPSG:5367'
+          RES=0.6060679809257282
+          TILE=256
+          GRID_MINX=153582.338026262
+          GRID_MINY=607134.0686377053
+          SPAN=TILE*RES
+
+          cases={
+            'Villa_Mills': {'aoi_bounds':(531070.27974348,1056459.27741403,532993.25213670,1058378.33289503)},
+            'El_Empalme': {'aoi_bounds':(507218.77626277,1074781.46972183,508382.01563185,1075906.97449541)},
+          }
+
+          s=requests.Session(); s.headers.update({'User-Agent':'Mozilla/5.0 QGIS/3.40 BTMM-QField'})
+
+          def fetch_tile(col,row):
+            xmin=GRID_MINX+col*SPAN; ymin=GRID_MINY+row*SPAN
+            xmax=xmin+SPAN; ymax=ymin+SPAN
+            params={
+              'SERVICE':'WMS','VERSION':'1.1.1','REQUEST':'GetMap','LAYERS':LAYER,'STYLES':'',
+              'FORMAT':'image/png','TRANSPARENT':'false','SRS':CRS,'WIDTH':str(TILE),'HEIGHT':str(TILE),
+              'BBOX':f'{xmin:.12f},{ymin:.12f},{xmax:.12f},{ymax:.12f}','TILED':'true'
+            }
+            last=None
+            for attempt in range(5):
+              try:
+                r=s.get(BASE,params=params,timeout=90); r.raise_for_status()
+                ct=(r.headers.get('content-type') or '').lower()
+                if len(r.content)<1000 or ('image' not in ct and not r.content.startswith(b'\x89PNG')):
+                  raise RuntimeError(f'non-image {ct}, {len(r.content)} bytes: {r.text[:180]}')
+                im=Image.open(BytesIO(r.content)).convert('RGB')
+                if im.size!=(TILE,TILE): raise RuntimeError(f'unexpected tile size {im.size}')
+                return np.asarray(im,dtype=np.uint8)
+              except Exception as e:
+                last=e; time.sleep(1.5*(attempt+1))
+            raise RuntimeError(f'tile col={col} row={row} failed: {last}')
+
+          manifest={'source':'Instituto Geografico Nacional / SNIT Costa Rica','product':'Mosaico de ortofotografias 1:5000, vuelos 2014-2017','layer':LAYER,'crs':CRS,'resolution_m_per_pixel':RES,'buffer_m':500,'cases':{}}
+
+          for name,cfg in cases.items():
+            xmin,ymin,xmax,ymax=cfg['aoi_bounds']
+            c0=math.floor((xmin-GRID_MINX)/SPAN); c1=math.floor((xmax-GRID_MINX-1e-9)/SPAN)
+            r0=math.floor((ymin-GRID_MINY)/SPAN); r1=math.floor((ymax-GRID_MINY-1e-9)/SPAN)
+            cols=c1-c0+1; rows=r1-r0+1
+            left=GRID_MINX+c0*SPAN; right=GRID_MINX+(c1+1)*SPAN
+            bottom=GRID_MINY+r0*SPAN; top=GRID_MINY+(r1+1)*SPAN
+            width=cols*TILE; height=rows*TILE
+            print(f'{name}: tiles {cols}x{rows}={cols*rows}; output {width}x{height}; extent {(left,bottom,right,top)}',flush=True)
+            mosaic=np.empty((height,width,3),dtype=np.uint8)
+            n=0
+            for rr in range(r0,r1+1):
+              out_y=(r1-rr)*TILE
+              for cc in range(c0,c1+1):
+                out_x=(cc-c0)*TILE
+                arr=fetch_tile(cc,rr)
+                mosaic[out_y:out_y+TILE,out_x:out_x+TILE,:]=arr
+                n+=1
+                if n%10==0 or n==cols*rows: print(f'  {n}/{cols*rows}',flush=True)
+
+            # Basic quality checks: real imagery should have substantial local variation.
+            std=float(mosaic.std()); mean=float(mosaic.mean())
+            if std<8.0: raise RuntimeError(f'{name}: imagery appears blank/unusable std={std:.3f}, mean={mean:.3f}')
+            out=OUT/f'{name}_ortofoto_offline_500m.tif'
+            profile={
+              'driver':'GTiff','width':width,'height':height,'count':3,'dtype':'uint8','crs':CRS,
+              'transform':from_origin(left,top,RES,RES),'compress':'jpeg','jpeg_quality':92,
+              'photometric':'ycbcr','tiled':True,'blockxsize':256,'blockysize':256,'interleave':'pixel','BIGTIFF':'IF_SAFER'
+            }
+            with rasterio.open(out,'w',**profile) as dst:
+              dst.write(np.transpose(mosaic,(2,0,1)))
+              dst.update_tags(FUENTE='Instituto Geografico Nacional / SNIT Costa Rica',PRODUCTO='Ortofoto 2014-2017 1:5000',CAPA=LAYER,CRS=CRS,BUFFER_SOLICITADO_M='500',RESOLUCION_M=str(RES),ATRIBUCION='Instituto Geografico Nacional, Registro Nacional, Costa Rica')
+              dst.build_overviews([2,4,8,16],Resampling.average)
+              dst.update_tags(ns='rio_overview',resampling='average')
+
+            with rasterio.open(out) as src:
+              b=src.bounds
+              # The tile-aligned raster must cover the entire exact 500 m AOI bbox.
+              assert b.left<=xmin and b.bottom<=ymin and b.right>=xmax and b.top>=ymax
+              sample=src.read([1,2,3],out_shape=(3,min(512,src.height),min(512,src.width)),resampling=Resampling.average)
+              sample_std=float(sample.std())
+              if sample_std<6.0: raise RuntimeError(f'{name}: downsampled imagery appears blank std={sample_std}')
+            sha=hashlib.sha256(out.read_bytes()).hexdigest()
+            manifest['cases'][name]={
+              'file':out.name,'aoi_bounds_epsg5367':[xmin,ymin,xmax,ymax],'raster_bounds_epsg5367':[b.left,b.bottom,b.right,b.top],
+              'width':width,'height':height,'pixel_size_m':RES,'stddev':std,'sample_stddev':sample_std,'mean':mean,
+              'size_bytes':out.stat().st_size,'sha256':sha,'tile_col_range':[c0,c1],'tile_row_range':[r0,r1]
+            }
+            del mosaic
+
+          (OUT/'imagery_manifest.json').write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding='utf-8')
+          print(json.dumps(manifest,indent=2,ensure_ascii=False),flush=True)
           PY
+      - name: Upload imagery artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfield-offline-imagery-500m
+          path: build/qfield_imagery/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
