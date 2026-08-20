@@ -60,3 +60,23 @@ jobs:
       - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  qfield-hydro-artifact:
+    name: TEMP QField hydrology artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify temporary hydrology extracts
+        run: |
+          test -f .tmp_qfield_hydro/Villa_Mills_caucedrenaje_25k_raw.geojson
+          test -f .tmp_qfield_hydro/El_Empalme_caucedrenaje_25k_raw.geojson
+          test -f .tmp_qfield_hydro/hydro_manifest.json
+          ls -lh .tmp_qfield_hydro/
+      - name: Upload temporary hydrology artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfield-hydrology-ign25
+          path: .tmp_qfield_hydro/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 1
