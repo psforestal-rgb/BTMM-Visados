@@ -9,10 +9,10 @@ permissions:
   contents: write
 
 jobs:
-  diagnose-hydro:
+  build-hydro:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Probe IGN 1:25k WFS capabilities and persist diagnostics
+      - name: Download IGN 1:25k Cauce y Drenaje for both project extents
         shell: bash
         run: |
           set -euo pipefail
@@ -28,54 +28,104 @@ jobs:
           python3 - <<'PY'
           from urllib.request import Request, urlopen
           from urllib.parse import urlencode
-          import xml.etree.ElementTree as ET
           from pathlib import Path
+          import json, hashlib, datetime, xml.etree.ElementTree as ET
 
-          candidates = [
-            'https://geos.snitcr.go.cr/be/IGN_25/wfs',
-            'https://geos0.snitcr.go.cr/be/IGN_25/wfs',
-            'https://geos1.snitcr.go.cr/be/IGN_25/wfs',
-          ]
-          words = ('cauce','dren','hidro','rio','río','queb','corriente','agua','curso')
-          lines=[]
-          for base in candidates:
-            url = base + '?' + urlencode({'service':'WFS','request':'GetCapabilities','version':'2.0.0'})
-            lines.append(f'=== {url} ===')
+          BASE='https://geos.snitcr.go.cr/be/IGN_25/wfs'
+          TYPE='IGN_25:caucedrenaje_25k'
+          CASES={
+            'Villa_Mills': (531070.27974348,1056459.27741403,532993.25213670,1058378.33289503),
+            'El_Empalme': (507218.77626277,1074781.46972183,508382.01563185,1075906.97449541),
+          }
+          HEAD={'User-Agent':'Mozilla/5.0 QGIS/3.40 BTMM-QField-builder/1.0','Accept':'application/json,application/xml;q=0.8,*/*;q=0.5'}
+          outdir=Path('.tmp_qfield_hydro')
+
+          def fetch(params, timeout=120):
+            url=BASE+'?'+urlencode(params)
+            req=Request(url,headers=HEAD)
+            with urlopen(req,timeout=timeout) as r:
+              data=r.read(); ct=r.headers.get('content-type','')
+              status=r.status; final=r.geturl()
+            return url,status,ct,data,final
+
+          # capabilities + schema
+          u,s,ct,data,final=fetch({'service':'WFS','request':'GetCapabilities','version':'2.0.0'})
+          (outdir/'IGN_25_GetCapabilities.xml').write_bytes(data)
+          root=ET.fromstring(data)
+          info=None
+          for el in root.iter():
+            if el.tag.split('}')[-1]=='FeatureType':
+              d={}
+              for ch in el:
+                tag=ch.tag.split('}')[-1]
+                if tag in ('Name','Title','Abstract','DefaultCRS','DefaultSRS','OtherCRS','OtherSRS'):
+                  d.setdefault(tag,[]).append((ch.text or '').strip())
+              names=d.get('Name',[])
+              if TYPE in names:
+                info=d; break
+          if info is None:
+            raise RuntimeError('FeatureType not found in capabilities: '+TYPE)
+
+          u2,s2,ct2,schema,final2=fetch({'service':'WFS','request':'DescribeFeatureType','version':'2.0.0','typeNames':TYPE})
+          (outdir/'caucedrenaje_25k_DescribeFeatureType.xsd').write_bytes(schema)
+
+          manifest={
+            'source':'Instituto Geografico Nacional / SNIT Costa Rica',
+            'node':'IGN Cartografia 1:25mil',
+            'wfs_base':BASE,
+            'wfs_version':'2.0.0',
+            'feature_type':TYPE,
+            'feature_type_info':info,
+            'download_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'crs_requested':'EPSG:5367',
+            'cases':{}
+          }
+          for name,b in CASES.items():
+            bbox=','.join(f'{v:.8f}' for v in b)+',EPSG:5367'
+            params={
+              'service':'WFS','version':'2.0.0','request':'GetFeature',
+              'typeNames':TYPE,'srsName':'EPSG:5367','bbox':bbox,
+              'outputFormat':'application/json'
+            }
+            url,status,ctype,body,final=fetch(params)
+            if not body:
+              raise RuntimeError(f'{name}: empty WFS response')
             try:
-              req = Request(url, headers={'User-Agent':'Mozilla/5.0 QGIS/3.40'})
-              with urlopen(req, timeout=60) as r:
-                data = r.read()
-                lines.append(f'status={r.status} content_type={r.headers.get("content-type")} len={len(data)} final={r.geturl()}')
-              root = ET.fromstring(data)
-              names = []
-              for el in root.iter():
-                if el.tag.split('}')[-1] == 'FeatureType':
-                  name = title = abstract = ''
-                  for ch in el:
-                    t=ch.tag.split('}')[-1]
-                    if t=='Name': name=(ch.text or '').strip()
-                    elif t=='Title': title=(ch.text or '').strip()
-                    elif t=='Abstract': abstract=(ch.text or '').strip()
-                  names.append((name,title,abstract))
-              lines.append(f'FeatureTypes total={len(names)}')
-              matches=[]
-              for n,t,a in names:
-                txt=(n+' '+t+' '+a).lower()
-                if any(w in txt for w in words):
-                  matches.append((n,t,a))
-              lines.append('MATCHES:')
-              for n,t,a in matches:
-                lines.append(f'{n} | {t} | {a[:300]}')
-              lines.append('ALL_NAMES:')
-              for n,t,a in names:
-                lines.append(f'{n} | {t}')
+              obj=json.loads(body.decode('utf-8'))
             except Exception as e:
-              lines.append('ERROR '+repr(e))
-          Path('.tmp_qfield_hydro/diagnostic_ign25.txt').write_text('\n'.join(lines), encoding='utf-8')
-          print('\n'.join(lines))
+              raise RuntimeError(f'{name}: WFS did not return GeoJSON: ct={ctype} sample={body[:500]!r}') from e
+            if obj.get('type')!='FeatureCollection':
+              raise RuntimeError(f'{name}: unexpected GeoJSON type {obj.get("type")}')
+            feats=obj.get('features',[])
+            # preserve a top-level CRS hint for older readers as well
+            obj['crs']={'type':'name','properties':{'name':'EPSG:5367'}}
+            path=outdir/f'{name}_caucedrenaje_25k_raw.geojson'
+            path.write_text(json.dumps(obj,ensure_ascii=False,separators=(',',':')),encoding='utf-8')
+            geom_types={}
+            prop_keys=set()
+            for f in feats:
+              gt=((f.get('geometry') or {}).get('type') or 'None')
+              geom_types[gt]=geom_types.get(gt,0)+1
+              prop_keys.update((f.get('properties') or {}).keys())
+            manifest['cases'][name]={
+              'bbox_epsg5367':list(b),
+              'request_url':url,
+              'status':status,
+              'content_type':ctype,
+              'feature_count':len(feats),
+              'geometry_types':geom_types,
+              'property_keys':sorted(prop_keys),
+              'raw_geojson':path.name,
+              'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+              'size_bytes':path.stat().st_size,
+            }
+            print(name,'features',len(feats),'geometry_types',geom_types,'properties',sorted(prop_keys),flush=True)
+
+          (outdir/'hydro_manifest.json').write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding='utf-8')
+          print(json.dumps(manifest,indent=2,ensure_ascii=False))
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .tmp_qfield_hydro/diagnostic_ign25.txt
-          git commit -m 'TEMP: persist IGN 1:25k WFS diagnostic' || exit 0
+          git add .tmp_qfield_hydro/
+          git commit -m 'TEMP: persist IGN 1:25k hydrology extracts' || exit 0
           git push origin HEAD:temp/qfield-offline-build-20260819
