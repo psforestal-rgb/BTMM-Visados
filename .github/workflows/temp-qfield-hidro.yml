@@ -4,48 +4,52 @@ on:
   push:
     branches:
       - temp/qfield-offline-build-20260819
-  pull_request:
-    branches:
-      - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   diagnose-hydro:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: temp/qfield-offline-build-20260819
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Probe IGN 1:25k WFS capabilities
+      - name: Probe IGN 1:25k WFS capabilities and persist diagnostics
         shell: bash
         run: |
+          set -euo pipefail
+          mkdir -p .tmp_qfield_hydro
           python3 - <<'PY'
           from urllib.request import Request, urlopen
           from urllib.parse import urlencode
           import xml.etree.ElementTree as ET
+          from pathlib import Path
 
           candidates = [
             'https://geos.snitcr.go.cr/be/IGN_25/wfs',
             'https://geos0.snitcr.go.cr/be/IGN_25/wfs',
             'https://geos1.snitcr.go.cr/be/IGN_25/wfs',
           ]
-          words = ('cauce','dren','hidro','rio','río','queb','corriente','agua')
+          words = ('cauce','dren','hidro','rio','río','queb','corriente','agua','curso')
+          lines=[]
           for base in candidates:
             url = base + '?' + urlencode({'service':'WFS','request':'GetCapabilities','version':'2.0.0'})
-            print('\n===', url, '===', flush=True)
+            lines.append(f'=== {url} ===')
             try:
               req = Request(url, headers={'User-Agent':'Mozilla/5.0 QGIS/3.40'})
               with urlopen(req, timeout=60) as r:
                 data = r.read()
-                print('status', r.status, 'ct', r.headers.get('content-type'), 'len', len(data), 'final', r.geturl(), flush=True)
+                lines.append(f'status={r.status} content_type={r.headers.get("content-type")} len={len(data)} final={r.geturl()}')
               root = ET.fromstring(data)
               names = []
               for el in root.iter():
-                tag = el.tag.split('}')[-1]
-                if tag == 'FeatureType':
+                if el.tag.split('}')[-1] == 'FeatureType':
                   name = title = abstract = ''
                   for ch in el:
                     t=ch.tag.split('}')[-1]
@@ -53,15 +57,25 @@ jobs:
                     elif t=='Title': title=(ch.text or '').strip()
                     elif t=='Abstract': abstract=(ch.text or '').strip()
                   names.append((name,title,abstract))
-              print('FeatureTypes total', len(names))
+              lines.append(f'FeatureTypes total={len(names)}')
+              matches=[]
               for n,t,a in names:
                 txt=(n+' '+t+' '+a).lower()
                 if any(w in txt for w in words):
-                  print('MATCH', n, '|', t, '|', a[:180])
-              print('ALL_NAMES_START')
+                  matches.append((n,t,a))
+              lines.append('MATCHES:')
+              for n,t,a in matches:
+                lines.append(f'{n} | {t} | {a[:300]}')
+              lines.append('ALL_NAMES:')
               for n,t,a in names:
-                print(n, '|', t)
-              print('ALL_NAMES_END')
+                lines.append(f'{n} | {t}')
             except Exception as e:
-              print('ERROR', repr(e), flush=True)
+              lines.append('ERROR '+repr(e))
+          Path('.tmp_qfield_hydro/diagnostic_ign25.txt').write_text('\n'.join(lines), encoding='utf-8')
+          print('\n'.join(lines))
           PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .tmp_qfield_hydro/diagnostic_ign25.txt
+          git commit -m 'TEMP: persist IGN 1:25k WFS diagnostic' || exit 0
+          git push origin HEAD:temp/qfield-offline-build-20260819
