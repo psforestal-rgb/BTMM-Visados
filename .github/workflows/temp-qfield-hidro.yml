@@ -1,0 +1,64 @@
+name: Temporary QField hydrology build
+
+on:
+  push:
+    branches:
+      - temp/qfield-offline-build-20260819
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-hydro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Probe IGN 1:25k WFS capabilities
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from urllib.request import Request, urlopen
+          from urllib.parse import urlencode
+          import xml.etree.ElementTree as ET
+
+          candidates = [
+            'https://geos.snitcr.go.cr/be/IGN_25/wfs',
+            'https://geos0.snitcr.go.cr/be/IGN_25/wfs',
+            'https://geos1.snitcr.go.cr/be/IGN_25/wfs',
+          ]
+          words = ('cauce','dren','hidro','rio','río','queb','corriente','agua')
+          for base in candidates:
+            url = base + '?' + urlencode({'service':'WFS','request':'GetCapabilities','version':'2.0.0'})
+            print('\n===', url, '===', flush=True)
+            try:
+              req = Request(url, headers={'User-Agent':'Mozilla/5.0 QGIS/3.40'})
+              with urlopen(req, timeout=60) as r:
+                data = r.read()
+                print('status', r.status, 'ct', r.headers.get('content-type'), 'len', len(data), 'final', r.geturl(), flush=True)
+              root = ET.fromstring(data)
+              names = []
+              for el in root.iter():
+                tag = el.tag.split('}')[-1]
+                if tag == 'FeatureType':
+                  name = title = abstract = ''
+                  for ch in el:
+                    t=ch.tag.split('}')[-1]
+                    if t=='Name': name=(ch.text or '').strip()
+                    elif t=='Title': title=(ch.text or '').strip()
+                    elif t=='Abstract': abstract=(ch.text or '').strip()
+                  names.append((name,title,abstract))
+              print('FeatureTypes total', len(names))
+              for n,t,a in names:
+                txt=(n+' '+t+' '+a).lower()
+                if any(w in txt for w in words):
+                  print('MATCH', n, '|', t, '|', a[:180])
+              print('ALL_NAMES_START')
+              for n,t,a in names:
+                print(n, '|', t)
+              print('ALL_NAMES_END')
+            except Exception as e:
+              print('ERROR', repr(e), flush=True)
+          PY
