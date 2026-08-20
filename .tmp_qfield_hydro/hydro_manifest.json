@@ -1,0 +1,84 @@
+{
+  "source": "Instituto Geografico Nacional / SNIT Costa Rica",
+  "node": "IGN Cartografia 1:25mil",
+  "wfs_base": "https://geos.snitcr.go.cr/be/IGN_25/wfs",
+  "wfs_version": "2.0.0",
+  "feature_type": "IGN_25:caucedrenaje_25k",
+  "feature_type_info": {
+    "Name": [
+      "IGN_25:caucedrenaje_25k"
+    ],
+    "Title": [
+      "Cauce y Drenaje 1:25mil"
+    ],
+    "Abstract": [
+      "Incluye las corrientes de agua ya sea de tipo permanente o intermitente."
+    ],
+    "DefaultCRS": [
+      "urn:ogc:def:crs:EPSG::5367"
+    ],
+    "OtherCRS": [
+      "urn:ogc:def:crs:EPSG::4326"
+    ]
+  },
+  "download_utc": "2026-08-20T15:09:26.215769+00:00",
+  "crs_requested": "EPSG:5367",
+  "cases": {
+    "Villa_Mills": {
+      "bbox_epsg5367": [
+        531070.27974348,
+        1056459.27741403,
+        532993.2521367,
+        1058378.33289503
+      ],
+      "request_url": "https://geos.snitcr.go.cr/be/IGN_25/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=IGN_25%3Acaucedrenaje_25k&srsName=EPSG%3A5367&bbox=531070.27974348%2C1056459.27741403%2C532993.25213670%2C1058378.33289503%2CEPSG%3A5367&outputFormat=application%2Fjson",
+      "status": 200,
+      "content_type": "application/json;charset=utf-8",
+      "feature_count": 18,
+      "geometry_types": {
+        "LineString": 18
+      },
+      "property_keys": [
+        "codigo",
+        "gmlid",
+        "longitud",
+        "nom_objeto",
+        "nombre",
+        "orden",
+        "origen",
+        "shape_leng"
+      ],
+      "raw_geojson": "Villa_Mills_caucedrenaje_25k_raw.geojson",
+      "sha256": "410993a9ae416932dc6307fc38ead7dc40516fcde7a5ff064f0cfe84888d2e16",
+      "size_bytes": 26883
+    },
+    "El_Empalme": {
+      "bbox_epsg5367": [
+        507218.77626277,
+        1074781.46972183,
+        508382.01563185,
+        1075906.97449541
+      ],
+      "request_url": "https://geos.snitcr.go.cr/be/IGN_25/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=IGN_25%3Acaucedrenaje_25k&srsName=EPSG%3A5367&bbox=507218.77626277%2C1074781.46972183%2C508382.01563185%2C1075906.97449541%2CEPSG%3A5367&outputFormat=application%2Fjson",
+      "status": 200,
+      "content_type": "application/json;charset=utf-8",
+      "feature_count": 5,
+      "geometry_types": {
+        "LineString": 5
+      },
+      "property_keys": [
+        "codigo",
+        "gmlid",
+        "longitud",
+        "nom_objeto",
+        "nombre",
+        "orden",
+        "origen",
+        "shape_leng"
+      ],
+      "raw_geojson": "El_Empalme_caucedrenaje_25k_raw.geojson",
+      "sha256": "68176203f716833fc8d78c944d60aa64115eb3ee12d266060bdd30054ff8e5d8",
+      "size_bytes": 7936
+    }
+  }
+}
