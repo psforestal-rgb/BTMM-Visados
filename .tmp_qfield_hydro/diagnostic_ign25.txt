@@ -1,0 +1,41 @@
+=== https://geos.snitcr.go.cr/be/IGN_25/wfs?service=WFS&request=GetCapabilities&version=2.0.0 ===
+status=200 content_type=application/xml len=111463 final=https://geos.snitcr.go.cr/be/IGN_25/wfs?service=WFS&request=GetCapabilities&version=2.0.0
+FeatureTypes total=24
+MATCHES:
+IGN_25:caucedrenaje_25k | Cauce y Drenaje 1:25mil | Incluye las corrientes de agua ya sea de tipo permanente o intermitente.
+IGN_25:cuerposdeagua_25k | Cuerpos de Agua 1:25mil | Incluye los cuerpos de agua superficial sean de tipo temporal o intermitente.
+IGN_25:infraestructuraferroviaria_25k | Infraestructura Ferroviaria 1:25mil | Instalaciones con servicios varios que funcionan como punto de partida y llegada de trenes o como parada intermedia. En este grupo se  incluyen los puentes y el paso a desnivel.
+IGN_25:infraestructuravial_25k | Infraestructura Vial 1 | Infraestructura vial destinada a facilitar la travesía vehicular sobre ríos, caminos y otros elementos.
+IGN_25:otroscuerposdeagua1_25k | Otros Cuerpos de Agua I 1:25k | Incluye los siguientes elementos: catarata o rápido, depósitos de agua y tanque de oscilación.
+IGN_25:otroscuerposdeagua2_25k | Otros Cuerpos de Agua II 1:25mil | Incluye los depósitos de agua con diferentes propósitos de uso como el recreativo, agroindustrial y otros.
+IGN_25:transporteferroviario_25k | Transporte Ferroviario 1:25mil | Vía de ferrocarril para el paso de trenes, estructura ferroviaria que permite el paso de trenes sobre un segmento de vía alterno, y espacio destinado a la red ferroviaria  en el que maniobran las locomotoras.
+IGN_25:areasespecificas_25k | Áreas Específicas 1:25mil | Incluye las áreas densamente  construidas, las áreas de uso cultural, los rellenos sanitarios, y el tajo o cantera.
+ALL_NAMES:
+IGN_25:accidentescosterosmarinos_25k | Accidentes Costeros y Marinos 1:25mil
+IGN_25:caucedrenaje_25k | Cauce y Drenaje 1:25mil
+IGN_25:contorno_25k | Contorno 1:25mil
+IGN_25:RE_120106 | Cotas 1:25mil
+IGN_25:cuerposdeagua_25k | Cuerpos de Agua 1:25mil
+IGN_25:RE_120102 | Curva Intermedia 1:25mil (Capa escalada)
+IGN_25:RE_120103 | Curva Suplementaria 1:25mil (Capa escalada)
+IGN_25:RE_120101 | Curva Índice 1:25mil (Capa escalada)
+IGN_25:ec140101_25k | Edificaciones 1:25mil
+IGN_25:edificacionesprominentes_25k | Edificaciones Prominentes 1:25mil
+IGN_25:infraestructuraferroviaria_25k | Infraestructura Ferroviaria 1:25mil
+IGN_25:infraestructuravial_25k | Infraestructura Vial 1
+IGN_25:infraestructuravial2_25k | Infraestructura Vial 2
+IGN_25:RE_120104 | Línea de Costa 1:25mil
+IGN_25:muelle_25k | Muelle 1:25mil
+IGN_25:obraspublicas1_25k | Obras Públicas y Otras Facilidades I 1:25mil
+IGN_25:obraspublicas2_25k | Obras Públicas y Otras Facilidades II 1:25mil
+IGN_25:obraspublicas3_25k | Obras Públicas y Otras Facilidades III 1:25mil
+IGN_25:otroscuerposdeagua1_25k | Otros Cuerpos de Agua I 1:25k
+IGN_25:otroscuerposdeagua2_25k | Otros Cuerpos de Agua II 1:25mil
+IGN_25:pistadeaterrizaje_25k | Pista de Aterrizaje 1:25mil
+IGN_25:transporteferroviario_25k | Transporte Ferroviario 1:25mil
+IGN_25:transporteterrestre_25k | Transporte Terrestre 1:25mil
+IGN_25:areasespecificas_25k | Áreas Específicas 1:25mil
+=== https://geos0.snitcr.go.cr/be/IGN_25/wfs?service=WFS&request=GetCapabilities&version=2.0.0 ===
+ERROR <HTTPError 404: 'Not Found'>
+=== https://geos1.snitcr.go.cr/be/IGN_25/wfs?service=WFS&request=GetCapabilities&version=2.0.0 ===
+ERROR <HTTPError 404: 'Not Found'>
