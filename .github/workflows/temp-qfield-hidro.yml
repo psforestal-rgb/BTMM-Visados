@@ -48,7 +48,6 @@ jobs:
               status=r.status; final=r.geturl()
             return url,status,ct,data,final
 
-          # capabilities + schema
           u,s,ct,data,final=fetch({'service':'WFS','request':'GetCapabilities','version':'2.0.0'})
           (outdir/'IGN_25_GetCapabilities.xml').write_bytes(data)
           root=ET.fromstring(data)
@@ -60,8 +59,7 @@ jobs:
                 tag=ch.tag.split('}')[-1]
                 if tag in ('Name','Title','Abstract','DefaultCRS','DefaultSRS','OtherCRS','OtherSRS'):
                   d.setdefault(tag,[]).append((ch.text or '').strip())
-              names=d.get('Name',[])
-              if TYPE in names:
+              if TYPE in d.get('Name',[]):
                 info=d; break
           if info is None:
             raise RuntimeError('FeatureType not found in capabilities: '+TYPE)
@@ -97,35 +95,42 @@ jobs:
             if obj.get('type')!='FeatureCollection':
               raise RuntimeError(f'{name}: unexpected GeoJSON type {obj.get("type")}')
             feats=obj.get('features',[])
-            # preserve a top-level CRS hint for older readers as well
             obj['crs']={'type':'name','properties':{'name':'EPSG:5367'}}
             path=outdir/f'{name}_caucedrenaje_25k_raw.geojson'
             path.write_text(json.dumps(obj,ensure_ascii=False,separators=(',',':')),encoding='utf-8')
-            geom_types={}
-            prop_keys=set()
+            geom_types={}; prop_keys=set()
             for f in feats:
               gt=((f.get('geometry') or {}).get('type') or 'None')
               geom_types[gt]=geom_types.get(gt,0)+1
               prop_keys.update((f.get('properties') or {}).keys())
             manifest['cases'][name]={
-              'bbox_epsg5367':list(b),
-              'request_url':url,
-              'status':status,
-              'content_type':ctype,
-              'feature_count':len(feats),
-              'geometry_types':geom_types,
-              'property_keys':sorted(prop_keys),
+              'bbox_epsg5367':list(b),'request_url':url,'status':status,
+              'content_type':ctype,'feature_count':len(feats),
+              'geometry_types':geom_types,'property_keys':sorted(prop_keys),
               'raw_geojson':path.name,
               'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
               'size_bytes':path.stat().st_size,
             }
-            print(name,'features',len(feats),'geometry_types',geom_types,'properties',sorted(prop_keys),flush=True)
+            print(name,'features',len(feats),'geometry_types',geom_types,flush=True)
 
           (outdir/'hydro_manifest.json').write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding='utf-8')
           print(json.dumps(manifest,indent=2,ensure_ascii=False))
           PY
+      - name: Upload hydrology artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfield-hydrology-ign25
+          path: .tmp_qfield_hydro/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 1
+      - name: Persist run id and extracts on temporary branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '${{ github.run_id }}' > .tmp_qfield_hydro/run_id.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .tmp_qfield_hydro/
-          git commit -m 'TEMP: persist IGN 1:25k hydrology extracts' || exit 0
+          git commit -m 'TEMP: persist IGN 1:25k hydrology extracts and run id' || exit 0
           git push origin HEAD:temp/qfield-offline-build-20260819
