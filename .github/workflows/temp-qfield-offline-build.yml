@@ -1,0 +1,235 @@
+name: Temporary QField offline imagery build
+
+on:
+  push:
+    branches:
+      - temp/qfield-offline-build-20260819
+
+permissions:
+  contents: read
+
+jobs:
+  build-imagery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install raster tools
+        run: python -m pip install --disable-pip-version-check --no-cache-dir rasterio requests pillow numpy
+
+      - name: Download official orthophoto and build local GeoTIFFs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/qfield_imagery
+          python - <<'PY'
+          from pathlib import Path
+          from io import BytesIO
+          import hashlib, json, math, time
+          from urllib.parse import urlencode
+
+          import numpy as np
+          import requests
+          from PIL import Image
+          import rasterio
+          from rasterio.transform import from_origin
+          from rasterio.enums import Resampling
+
+          OUT = Path('build/qfield_imagery')
+          OUT.mkdir(parents=True, exist_ok=True)
+          CRS = 'EPSG:5367'
+          RES = 0.606067981
+          TILE = 1024
+
+          cases = {
+              'Villa_Mills': {
+                  'bounds': (531070.27974348, 1056459.27741403, 532993.25213670, 1058378.33289503),
+              },
+              'El_Empalme': {
+                  'bounds': (507218.77626277, 1074781.46972183, 508382.01563185, 1075906.97449541),
+              },
+          }
+
+          sources = [
+              {
+                  'name': 'IGN/SNIT Ortofoto 2014-2017 1:5000',
+                  'base': 'https://geos1.snitcr.go.cr/Ortofoto2017/wms',
+                  'version': '1.1.1',
+                  'layer': 'ortofoto2017_5000_altaresolucion',
+                  'fixed': {},
+              },
+              {
+                  'name': 'IGN/SNIT Mosaico5000',
+                  'base': 'https://geos0.snitcr.go.cr/cgi-bin/web',
+                  'version': '1.3.0',
+                  'layer': 'Mosaico5000',
+                  'fixed': {'map': 'ortofoto.map'},
+              },
+          ]
+
+          session = requests.Session()
+          session.headers.update({'User-Agent': 'BTMM-QField-offline-builder/1.0'})
+
+          def get_tile(source, bbox, width, height):
+              xmin, ymin, xmax, ymax = bbox
+              params = {
+                  'SERVICE': 'WMS',
+                  'VERSION': source['version'],
+                  'REQUEST': 'GetMap',
+                  'LAYERS': source['layer'],
+                  'STYLES': '',
+                  'FORMAT': 'image/jpeg',
+                  'TRANSPARENT': 'false',
+                  'WIDTH': str(width),
+                  'HEIGHT': str(height),
+                  'BBOX': f'{xmin:.8f},{ymin:.8f},{xmax:.8f},{ymax:.8f}',
+              }
+              if source['version'] == '1.1.1':
+                  params['SRS'] = CRS
+              else:
+                  params['CRS'] = CRS
+              params.update(source.get('fixed', {}))
+              last = None
+              for attempt in range(4):
+                  try:
+                      r = session.get(source['base'], params=params, timeout=90)
+                      r.raise_for_status()
+                      ct = (r.headers.get('content-type') or '').lower()
+                      if len(r.content) < 1000 or ('image' not in ct and not r.content.startswith(b'\xff\xd8') and not r.content.startswith(b'\x89PNG')):
+                          raise RuntimeError(f'Non-image response ({ct}, {len(r.content)} bytes): {r.text[:250]}')
+                      im = Image.open(BytesIO(r.content)).convert('RGB')
+                      if im.size != (width, height):
+                          im = im.resize((width, height), Image.Resampling.BILINEAR)
+                      return np.asarray(im, dtype=np.uint8)
+                  except Exception as exc:
+                      last = exc
+                      time.sleep(2 * (attempt + 1))
+              raise RuntimeError(f'WMS tile failed after retries: {last}')
+
+          manifest = {
+              'crs': CRS,
+              'requested_resolution_m_per_pixel': RES,
+              'buffer_m': 500,
+              'cases': {},
+          }
+
+          for case_name, cfg in cases.items():
+              xmin, ymin, xmax, ymax = cfg['bounds']
+              width = int(math.ceil((xmax - xmin) / RES))
+              height = int(math.ceil((ymax - ymin) / RES))
+              px_x = (xmax - xmin) / width
+              px_y = (ymax - ymin) / height
+              out = OUT / f'{case_name}_ortofoto_offline_500m.tif'
+
+              source_used = None
+              last_error = None
+              # Test sources with central 256px request, then use first working source.
+              test_bbox = (
+                  (xmin+xmax)/2 - 128*px_x,
+                  (ymin+ymax)/2 - 128*px_y,
+                  (xmin+xmax)/2 + 128*px_x,
+                  (ymin+ymax)/2 + 128*px_y,
+              )
+              for source in sources:
+                  try:
+                      test = get_tile(source, test_bbox, 256, 256)
+                      if float(test.std()) < 2.0:
+                          raise RuntimeError('Image tile is effectively blank')
+                      source_used = source
+                      break
+                  except Exception as exc:
+                      last_error = f'{source["name"]}: {exc}'
+                      print('Source failed:', last_error, flush=True)
+              if source_used is None:
+                  raise RuntimeError(f'No imagery source succeeded for {case_name}. Last: {last_error}')
+
+              print(f'{case_name}: source={source_used["name"]}; output={width}x{height}; pixel={px_x:.6f}x{px_y:.6f} m', flush=True)
+
+              profile = {
+                  'driver': 'GTiff',
+                  'width': width,
+                  'height': height,
+                  'count': 3,
+                  'dtype': 'uint8',
+                  'crs': CRS,
+                  'transform': from_origin(xmin, ymax, px_x, px_y),
+                  'compress': 'jpeg',
+                  'jpeg_quality': 92,
+                  'photometric': 'ycbcr',
+                  'tiled': True,
+                  'blockxsize': 256,
+                  'blockysize': 256,
+                  'interleave': 'pixel',
+                  'BIGTIFF': 'IF_SAFER',
+              }
+
+              with rasterio.open(out, 'w', **profile) as dst:
+                  rows = int(math.ceil(height / TILE))
+                  cols = int(math.ceil(width / TILE))
+                  n = rows * cols
+                  done = 0
+                  for r in range(rows):
+                      yoff = r * TILE
+                      th = min(TILE, height - yoff)
+                      tymax = ymax - yoff * px_y
+                      tymin = ymax - (yoff + th) * px_y
+                      for c in range(cols):
+                          xoff = c * TILE
+                          tw = min(TILE, width - xoff)
+                          txmin = xmin + xoff * px_x
+                          txmax = xmin + (xoff + tw) * px_x
+                          arr = get_tile(source_used, (txmin, tymin, txmax, tymax), tw, th)
+                          dst.write(np.transpose(arr, (2, 0, 1)), window=((yoff, yoff+th), (xoff, xoff+tw)))
+                          done += 1
+                          print(f'  tile {done}/{n}', flush=True)
+                  dst.update_tags(
+                      FUENTE=source_used['name'],
+                      URL=source_used['base'],
+                      CAPA=source_used['layer'],
+                      CRS=CRS,
+                      BUFFER_M='500',
+                      RESOLUCION_SOLICITADA_M=str(RES),
+                      ATRIBUCION='Instituto Geografico Nacional / Registro Nacional / SNIT, Costa Rica',
+                  )
+                  dst.build_overviews([2, 4, 8, 16], Resampling.average)
+                  dst.update_tags(ns='rio_overview', resampling='average')
+
+              with rasterio.open(out) as src:
+                  sample = src.read([1,2,3], out_shape=(3, min(512,src.height), min(512,src.width)), resampling=Resampling.average)
+                  std = float(sample.std())
+                  if std < 2.0:
+                      raise RuntimeError(f'{case_name}: resulting raster appears blank (std={std})')
+                  b = src.bounds
+                  if b.left > xmin + 0.01 or b.bottom > ymin + 0.01 or b.right < xmax - 0.01 or b.top < ymax - 0.01:
+                      raise RuntimeError(f'{case_name}: raster does not cover requested extent')
+
+              sha = hashlib.sha256(out.read_bytes()).hexdigest()
+              manifest['cases'][case_name] = {
+                  'file': out.name,
+                  'source': source_used['name'],
+                  'source_url': source_used['base'],
+                  'layer': source_used['layer'],
+                  'bounds_epsg5367': [xmin, ymin, xmax, ymax],
+                  'width': width,
+                  'height': height,
+                  'pixel_size_m': [px_x, px_y],
+                  'sample_stddev': std,
+                  'sha256': sha,
+                  'size_bytes': out.stat().st_size,
+              }
+
+          (OUT / 'imagery_manifest.json').write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding='utf-8')
+          print(json.dumps(manifest, indent=2, ensure_ascii=False))
+          PY
+
+      - name: Upload imagery artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfield-offline-imagery-500m
+          path: build/qfield_imagery/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
