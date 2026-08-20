@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - temp/qfield-offline-build-20260819
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -29,7 +32,6 @@ jobs:
           from pathlib import Path
           from io import BytesIO
           import hashlib, json, math, time
-          from urllib.parse import urlencode
 
           import numpy as np
           import requests
@@ -126,7 +128,6 @@ jobs:
 
               source_used = None
               last_error = None
-              # Test sources with central 256px request, then use first working source.
               test_bbox = (
                   (xmin+xmax)/2 - 128*px_x,
                   (ymin+ymax)/2 - 128*px_y,
