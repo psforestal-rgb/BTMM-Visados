@@ -521,11 +521,23 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
         <div id="pne-info-fincasacc" style="font-size:10px;color:#8aa0bd;padding:2px 4px 0;line-height:1.4"></div>
         <div class="legend-wrap" id="lg-pne-fincasacc" style="display:none"><div class="lrow"><span class="lsw" style="background:#1b9e77"></span><span class="ll">Fincas del Estado ACC (N° de finca y plano)</span></div></div>
       </div>
+      <div>
+        <label class="ltog"><input type="checkbox" id="cb-pne-tenenciarfrm"><span style="flex:1">Tenencia histórica R.F. Río Macho</span><span class="lbadge">ITCO 1966</span></label>
+        <div id="pne-info-tenenciarfrm" style="font-size:10px;color:#8aa0bd;padding:2px 4px 0;line-height:1.4"></div>
+        <div class="legend-wrap" id="lg-pne-tenenciarfrm" style="display:none;line-height:1.35">
+          <div class="lrow"><span class="lsw" style="background:#f4b6d2;border-color:#d94d93"></span><span class="ll">Finca del Estado</span></div>
+          <div class="lrow"><span class="lsw" style="background:#cde8d2;border-color:#207a3b"></span><span class="ll">Se investiga posible pago</span></div>
+          <div class="lrow"><span class="lsw" style="background:#f7df75;border-color:#d88b18"></span><span class="ll">Fincas F.P. Nacionales</span></div>
+          <div class="lrow"><span class="lsw" style="background:#ffd0a6;border-color:#ef7f35"></span><span class="ll">R.F. Río Macho</span></div>
+          <div class="lrow"><span class="lsw" style="background:#b9e4e7;border-color:#168f9c"></span><span class="ll">Detalle CATIE</span></div>
+          <div style="font-size:9px;color:#90a6c4;margin-top:3px">Borde continuo: dentro · discontinuo largo: parcial · punteado: fuera del ASP.</div>
+        </div>
+      </div>
     </div>
     <div class="pnl">
       <div class="pt">🔬 Análisis Info PNE</div>
       <button class="btn bp" id="btn-pne-analyze" disabled onclick="runPneAnalysis()">🏛️ Analizar Info PNE</button>
-      <div style="font-size:10px;color:#8aa0bd;padding:4px 4px 0;line-height:1.4">Genera un minimapa del predio para cada una de las cuatro capas y la tabla de estimación de traslape (% del predio). En PNE del SNIT y Fincas del Estado ACC se detalla número de finca e información del plano.</div>
+      <div style="font-size:10px;color:#8aa0bd;padding:4px 4px 0;line-height:1.4">Genera un minimapa del predio para cada una de las cinco capas y la tabla de estimación de traslape (% del predio). La tenencia histórica muestra conjuntamente el ráster y el vector; el geoproceso utiliza exclusivamente el vector.</div>
     </div>
   </div>
 
@@ -741,7 +753,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-15-concordancia-forma-v52';
+const APP_VERSION='2026-08-24-tenencia-rfrm-v53';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -927,7 +939,7 @@ const S={lfl:{},gjd:{},uGJ:null,uLfl:null,op:0.75,activeTab:'carga',
   aspGJ:null,aspLayer:null,aspUserTouched:false,lastAspResults:null,lastAspUserGeoJSON:null,lastAspBounds:null,
   terrain:{relieveGJ:null,floodGJ:null,reliefImage:null,reliefMeta:null,floodLayer:null,humedalesGJ:null,humedalesLayer:null,reliefUserTouched:false,floodUserTouched:false,humedalesUserTouched:false,lastResults:null,lastUserGeoJSON:null,lastBounds:null,classGrid:null,classMeta:null},
   fuentes:{causeGJ:null,causeLayer:null,causeTouched:false,daWmsTouched:false,daCaps:null,daLayers:{},daOpacity:0.85,daLoading:false,lastUserGeoJSON:null,lastDaLayers:null,dictLabels:[],dictMarkers:null,fiBound:false},
-  pneGJ:{},pneLayer:{},pneLoaded:false,pneLoading:false,pneTouched:false,lastPneResults:null,
+  pneGJ:{},pneLayer:{},pneRaster:{},pneLoaded:false,pneLoading:false,pneTouched:false,lastPneResults:null,
   pdfLayer:null,pdfPlanData:null,pdfName:null,pdfOpacity:1,pdfMode:null,pdfManual:{active:false,pairs:[],pending:null,markers:[]}};
 const miniMaps={};
 // Encuadre ajustado al predio para todos los mini-mapas (zoom al predio)
@@ -1307,6 +1319,7 @@ function restackLayers(){
   Object.keys(LM).forEach(k=>{if(S.lfl[k]&&map.hasLayer(S.lfl[k])&&S.lfl[k].bringToFront)S.lfl[k].bringToFront();});
   // capas temáticas de módulos activos
   if(S.aspLayer&&map.hasLayer(S.aspLayer)&&S.aspLayer.bringToFront)S.aspLayer.bringToFront();
+  Object.values(S.pneRaster).forEach(l=>{if(l&&map.hasLayer(l)&&l.bringToFront)l.bringToFront();});
   Object.values(S.pneLayer).forEach(l=>{if(l&&map.hasLayer(l)&&l.bringToFront)l.bringToFront();});
   if(S.terrain?.reliefImage&&map.hasLayer(S.terrain.reliefImage)&&S.terrain.reliefImage.bringToFront)S.terrain.reliefImage.bringToFront();
   if(S.terrain?.floodLayer&&map.hasLayer(S.terrain.floodLayer)&&S.terrain.floodLayer.bringToFront)S.terrain.floodLayer.bringToFront();
@@ -4124,10 +4137,46 @@ const PNE_LAYERS=[
   {id:'carretera2km',label:'Buffer 2 km Carretera Interamericana',file:'btmm_2km_carretera_interamericana.gpkg',color:'#e6820e',type:'area'},
   {id:'pnesnit',label:'PNE del SNIT',file:'btmm_pne_del_snit.gpkg',color:'#2f6fd0',type:'finca'},
   {id:'terrenos3000',label:'Terrenos sobre 3000 m',file:'btmm_terrenos_sobre_3000m.gpkg',color:'#7b3fb5',type:'area'},
-  {id:'fincasacc',label:'Fincas del Estado ACC',file:'btmm_fincas_del_estado_acc.gpkg',color:'#1b9e77',type:'finca'}
+  {id:'fincasacc',label:'Fincas del Estado ACC',file:'btmm_fincas_del_estado_acc.gpkg',color:'#1b9e77',type:'finca'},
+  {id:'tenenciarfrm',label:'Tenencia histórica R.F. Río Macho (ITCO 1966)',file:'btmm_mapa_tenencia_rfrm_1966.gpkg',rasterFile:'btmm_mapa_tenencia_rfrm_1966.webp',rasterBounds:[[9.510085,-83.958052],[9.818615,-83.4385067]],rasterOpacity:0.62,color:'#d94d93',type:'tenure'}
 ];
+const PNE_TENENCIA_NOTE='Capa histórica de referencia: digitalización manual parcial del Mapa sobre Tenencia de la Tierra de la R.F. Río Macho (MIRENEM–Dirección General Forestal, escala 1:50 000; información ITCO, junio de 1966), trazada sobre el ráster georreferenciado a escalas de visualización aproximadas 1:1 000–1:750. Se adopta una incertidumbre planimétrica absoluta conservadora de aproximadamente 100 m. Es apta para análisis histórico, administrativo y territorial general; no para fijar linderos, resolver propiedad ni sustituir catastro, registro o levantamientos topográficos.';
 function pneFinca(f){const p=f.properties||{};return p.N_FINCA||p.n_finca||p.NFINCA||p.nfinca||p.Finca||'';}
 function pnePlano(f){const p=f.properties||{};return p.PLANO||p.plano||p.N_PLANO||p.n_plano||'';}
+function pneAttr(f,...keys){
+  const p=f&&f.properties?f.properties:{};
+  for(const key of keys){if(Object.prototype.hasOwnProperty.call(p,key)&&p[key]!==null&&p[key]!==undefined&&String(p[key]).trim()!=='')return p[key];}
+  return '';
+}
+function pnePushUnique(target,value){
+  const text=value===undefined||value===null?'':String(value).trim();
+  if(text&&target.indexOf(text)<0)target.push(text);
+}
+function pneTenenciaStyle(f,report){
+  const clase=String(pneAttr(f,'CLASE')).toLowerCase();
+  const detalle=String(pneAttr(f,'DETALLE')).toLowerCase();
+  const relacion=String(pneAttr(f,'RELAC. ASP','RELAC_ASP')).toLowerCase();
+  let color='#a23b72',fillColor='#f7dce9';
+  if(detalle.includes('catie')){color='#168f9c';fillColor='#b9e4e7';}
+  else if(clase.includes('investiga')){color='#207a3b';fillColor='#cde8d2';}
+  else if(clase.includes('f.p. nacionales')){color='#d88b18';fillColor='#f7df75';}
+  else if(clase.includes('r.f. rio macho')||clase.includes('r.f. río macho')){color='#ef7f35';fillColor='#ffd0a6';}
+  else if(clase.includes('finca del estado')){color='#d94d93';fillColor='#f4b6d2';}
+  let dashArray=null;
+  if(relacion.includes('parcial'))dashArray='9 5';
+  else if(relacion.includes('fuera'))dashArray='3 4';
+  return {color,fillColor,fillOpacity:report?0.25:0.20,weight:detalle?2.2:1.5,opacity:0.98,dashArray};
+}
+function pneFeatureStyle(cfg,f,report){
+  return cfg.type==='tenure'?pneTenenciaStyle(f,report):{color:cfg.color,fillColor:cfg.color,fillOpacity:report?0.32:0.22,weight:report?1.3:1.4,opacity:0.97};
+}
+function pneTenenciaLegendItems(){return [
+  {label:'Finca del Estado',color:'#f4b6d2',outline:true},
+  {label:'Se investiga posible pago',color:'#cde8d2',outline:true},
+  {label:'Fincas F.P. Nacionales',color:'#f7df75',outline:true},
+  {label:'R.F. Río Macho',color:'#ffd0a6',outline:true},
+  {label:'Detalle CATIE',color:'#b9e4e7',outline:true}
+];}
 
 async function loadPneLayers(){
   if(S.pneLoaded||S.pneLoading)return;
@@ -4141,7 +4190,12 @@ async function loadPneLayers(){
       const gj=await parseGPKGBuffer(await resp.arrayBuffer());
       S.pneGJ[cfg.id]=gj;
       const n=gj.features.length;
-      if(info)info.textContent=n+' polígono'+(n===1?'':'s')+' cargado'+(n===1?'':'s')+'.';
+      if(info){
+        if(cfg.type==='tenure'){
+          const joinedIds=new Set(gj.features.filter(f=>pneAttr(f,'ITCO_JOIN')).map(f=>String(pneAttr(f,'id','ID')))).size;
+          info.textContent=n+' polígonos cargados; '+joinedIds+' identificadores enlazados con Hoja1, columna C.';
+        }else info.textContent=n+' polígono'+(n===1?'':'s')+' cargado'+(n===1?'':'s')+'.';
+      }
     }catch(e){
       console.error('PNE',cfg.id,e);
       if(info)info.textContent='No se pudo cargar: '+e.message;
@@ -4155,12 +4209,22 @@ async function loadPneLayers(){
 function makePneLayer(cfg){
   const gj=S.pneGJ[cfg.id];if(!gj)return null;
   return L.geoJSON(gj,{
-    style:{color:cfg.color,fillColor:cfg.color,fillOpacity:0.22,weight:1.4,opacity:0.97},
+    style:f=>pneFeatureStyle(cfg,f,false),
     onEachFeature:(f,l)=>{
-      const fin=pneFinca(f),pl=pnePlano(f);
       let tip='<b>'+htmlEsc(cfg.label)+'</b>';
-      if(fin)tip+='<br>Finca: '+htmlEsc(fin);
-      if(pl)tip+='<br>Plano: '+htmlEsc(pl);
+      if(cfg.type==='tenure'){
+        const fields=[
+          ['ID',pneAttr(f,'id','ID')],['Propietario ITCO',pneAttr(f,'ITCO_PROP')],['Símbolo',pneAttr(f,'ITCO_SIMB')],
+          ['Monto pagado',pneAttr(f,'ITCO_MONTO')],['Observación',pneAttr(f,'ITCO_OBS')],['Clase',pneAttr(f,'CLASE')],
+          ['Detalle',pneAttr(f,'DETALLE')],['Relación ASP',pneAttr(f,'RELAC. ASP','RELAC_ASP')]
+        ];
+        fields.forEach(pair=>{if(pair[1]!==''&&pair[1]!==null)tip+='<br>'+pair[0]+': '+htmlEsc(pair[1]);});
+        if(!pneAttr(f,'ITCO_JOIN'))tip+='<br><i>Sin coincidencia en ITCO 1966</i>';
+      }else{
+        const fin=pneFinca(f),pl=pnePlano(f);
+        if(fin)tip+='<br>Finca: '+htmlEsc(fin);
+        if(pl)tip+='<br>Plano: '+htmlEsc(pl);
+      }
       l.bindTooltip(tip,{className:'itt',sticky:true});
     }
   });
@@ -4169,11 +4233,14 @@ function setPneLayer(cfg,show){
   const lg=document.getElementById('lg-pne-'+cfg.id);
   if(show){
     if(!S.pneGJ[cfg.id])return;
+    if(cfg.rasterFile&&!S.pneRaster[cfg.id])S.pneRaster[cfg.id]=L.imageOverlay('data/'+cfg.rasterFile+'?v='+APP_VERSION,cfg.rasterBounds,{opacity:cfg.rasterOpacity,interactive:false});
+    if(S.pneRaster[cfg.id]&&!map.hasLayer(S.pneRaster[cfg.id]))S.pneRaster[cfg.id].addTo(map);
     if(!S.pneLayer[cfg.id])S.pneLayer[cfg.id]=makePneLayer(cfg);
     if(S.pneLayer[cfg.id]&&!map.hasLayer(S.pneLayer[cfg.id]))S.pneLayer[cfg.id].addTo(map);
     if(lg)lg.style.display='block';
   }else{
     if(S.pneLayer[cfg.id]&&map.hasLayer(S.pneLayer[cfg.id]))map.removeLayer(S.pneLayer[cfg.id]);
+    if(S.pneRaster[cfg.id]&&map.hasLayer(S.pneRaster[cfg.id]))map.removeLayer(S.pneRaster[cfg.id]);
     if(lg)lg.style.display='none';
   }
 }
@@ -4243,10 +4310,27 @@ async function runPneAnalysis(){
             const key=fin+'¦'+pl;
             const cur=byKey.get(key)||{finca:fin,plano:pl,ha:0};
             cur.ha+=ha;byKey.set(key,cur);
+          }else if(cfg.type==='tenure'){
+            const id=String(pneAttr(f,'id','ID')||('sin ID '+(pneAttr(f,'fid','FID')||'')));
+            const cur=byKey.get(id)||{id,propietarios:[],simbolos:[],montos:[],observaciones:[],clases:[],detalles:[],relaciones:[],ha:0};
+            pnePushUnique(cur.propietarios,pneAttr(f,'ITCO_PROP'));
+            pnePushUnique(cur.simbolos,pneAttr(f,'ITCO_SIMB'));
+            pnePushUnique(cur.montos,pneAttr(f,'ITCO_MONTO'));
+            pnePushUnique(cur.observaciones,pneAttr(f,'ITCO_OBS'));
+            pnePushUnique(cur.clases,pneAttr(f,'CLASE'));
+            pnePushUnique(cur.detalles,pneAttr(f,'DETALLE'));
+            pnePushUnique(cur.relaciones,pneAttr(f,'RELAC. ASP','RELAC_ASP'));
+            cur.ha+=ha;byKey.set(id,cur);
           }
         }
       }
-      const items=cfg.type==='finca'?[...byKey.values()].sort((a,b)=>b.ha-a.ha):[];
+      let items=[];
+      if(cfg.type==='finca')items=[...byKey.values()].sort((a,b)=>b.ha-a.ha);
+      else if(cfg.type==='tenure')items=[...byKey.values()].map(it=>({
+        id:it.id,propietario:it.propietarios.join(' / ')||'—',simbolo:it.simbolos.join(' / ')||'—',monto:it.montos.join(' / ')||'—',
+        observacion:it.observaciones.join(' / ')||'—',clase:it.clases.join(' / ')||'—',detalle:it.detalles.join(' / ')||'—',
+        relacion:it.relaciones.join(' / ')||'—',ha:it.ha
+      })).sort((a,b)=>String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
       perLayer.push({cfg,items,totHa,pct:uHa>0?totHa/uHa*100:0});
     }
     S.lastPneResults={perLayer,uHa};
@@ -4273,7 +4357,8 @@ function initPneResultMap(key,cfg,userGeoJSON,userUnion){
   // solo dibuja los vectores una vez fijada la vista del mapa.
   const view=contextBoundsFor(userGeoJSON,gj);
   try{if(view.bounds&&view.bounds.isValid&&view.bounds.isValid())m.fitBounds(view.bounds,view.options);else m.setView([9.72,-83.86],14);}catch(e){try{m.setView([9.72,-83.86],14);}catch(_){}}
-  if(gj)L.geoJSON(gj,{style:{color:cfg.color,fillColor:cfg.color,fillOpacity:0.30,weight:1.3,opacity:0.97},onEachFeature:(f,l)=>{const fin=pneFinca(f),pl=pnePlano(f);let tip='<b>'+htmlEsc(cfg.label)+'</b>';if(fin)tip+='<br>N\u00B0 finca: '+htmlEsc(fin);if(pl)tip+='<br>Plano: '+htmlEsc(pl);l.bindTooltip(tip,{className:'itt',sticky:true});}}).addTo(m);
+  if(cfg.rasterFile)L.imageOverlay('data/'+cfg.rasterFile+'?v='+APP_VERSION,cfg.rasterBounds,{opacity:cfg.rasterOpacity,interactive:false}).addTo(m);
+  if(gj)L.geoJSON(gj,{style:f=>pneFeatureStyle(cfg,f,true),onEachFeature:(f,l)=>{if(cfg.type!=='tenure'){const fin=pneFinca(f),pl=pnePlano(f);let tip='<b>'+htmlEsc(cfg.label)+'</b>';if(fin)tip+='<br>N\u00B0 finca: '+htmlEsc(fin);if(pl)tip+='<br>Plano: '+htmlEsc(pl);l.bindTooltip(tip,{className:'itt',sticky:true});}}}).addTo(m);
   addUserHighlightToMap(m,userGeoJSON,userUnion,true);
   m.invalidateSize();
   try{if(view.bounds&&view.bounds.isValid&&view.bounds.isValid())m.fitBounds(view.bounds,view.options);}catch(e){}
@@ -4301,6 +4386,12 @@ function displayPneResults(perLayer,userGeoJSON,userUnion,uHa){
     mmwrap.style.marginBottom='6px';
     mmwrap.innerHTML='<div id="mm-pne-'+cfg.id+'" class="mm-div" style="height:190px"></div>';
     block.appendChild(mmwrap);
+    if(cfg.type==='tenure'){
+      const method=document.createElement('div');
+      method.style.cssText='font-size:9px;color:#496b4b;background:#eef6ee;border:1px solid #c8dbc9;border-radius:4px;padding:6px;margin:0 0 6px;line-height:1.4';
+      method.textContent=PNE_TENENCIA_NOTE+' El ráster es referencia visual; las intersecciones y áreas se calculan exclusivamente con la capa vectorial.';
+      block.appendChild(method);
+    }
     const tbl=document.createElement('table');
     tbl.className='rtbl';
     if(cfg.type==='finca'){
@@ -4319,6 +4410,23 @@ function displayPneResults(perLayer,userGeoJSON,userUnion,uHa){
       }else{
         const tr=document.createElement('tr');tr.innerHTML='<td colspan="4" style="text-align:center;color:#6a6a6a">Sin traslape con el predio</td>';tb.appendChild(tr);
       }
+    }else if(cfg.type==='tenure'){
+      tbl.style.cssText='min-width:1120px;font-size:8.5px';
+      tbl.innerHTML='<thead><tr><th>ID</th><th>Propietario ITCO 1966</th><th>Símbolo / especificación</th><th>Monto pagado</th><th>Observación</th><th>Clase</th><th>Detalle</th><th>Relación ASP</th><th>Área (ha)</th><th>% del predio</th></tr></thead><tbody></tbody>';
+      const tb=tbl.querySelector('tbody');
+      if(entry.items.length){
+        entry.items.forEach(it=>{
+          const pct=uHa>0?it.ha/uHa*100:0;
+          const tr=document.createElement('tr');
+          tr.innerHTML='<td style="text-align:center">'+htmlEsc(it.id)+'</td><td>'+htmlEsc(it.propietario)+'</td><td>'+htmlEsc(it.simbolo)+'</td><td>'+htmlEsc(it.monto)+'</td><td>'+htmlEsc(it.observacion)+'</td><td>'+htmlEsc(it.clase)+'</td><td>'+htmlEsc(it.detalle)+'</td><td>'+htmlEsc(it.relacion)+'</td><td class="td-num">'+it.ha.toFixed(2)+'</td><td class="td-num">'+pct.toFixed(1)+'%</td>';
+          tb.appendChild(tr);
+        });
+        const tot=document.createElement('tr');tot.className='td-total';
+        tot.innerHTML='<td colspan="8" style="text-align:right;font-weight:700">Total</td><td class="td-num">'+entry.totHa.toFixed(2)+'</td><td class="td-num">'+entry.pct.toFixed(1)+'%</td>';
+        tb.appendChild(tot);
+      }else{
+        const tr=document.createElement('tr');tr.innerHTML='<td colspan="10" style="text-align:center;color:#6a6a6a">Sin traslape vectorial con el predio</td>';tb.appendChild(tr);
+      }
     }else{
       tbl.innerHTML='<thead><tr><th>Capa</th><th>Área (ha)</th><th>% del predio</th></tr></thead><tbody></tbody>';
       const tb=tbl.querySelector('tbody');
@@ -4330,12 +4438,14 @@ function displayPneResults(perLayer,userGeoJSON,userUnion,uHa){
         const tr=document.createElement('tr');tr.innerHTML='<td colspan="3" style="text-align:center;color:#6a6a6a">Sin traslape con el predio</td>';tb.appendChild(tr);
       }
     }
-    block.appendChild(tbl);
+    if(cfg.type==='tenure'){
+      const scroll=document.createElement('div');scroll.style.cssText='overflow-x:auto;max-width:100%';scroll.appendChild(tbl);block.appendChild(scroll);
+    }else block.appendChild(tbl);
     rb.appendChild(block);
   });
   const note=document.createElement('div');
   note.style.cssText='font-size:10.5px;color:#90a6c4;margin-top:4px;border-top:1px solid #122a4f;padding-top:5px;line-height:1.4';
-  note.textContent='Área total del predio: '+uHa.toFixed(2)+' ha. Estimación de traslape calculada en CRTM05/EPSG:5367. Cada minimapa muestra el predio (amarillo) sobre la capa indicada, sin imagen aérea de fondo. Para PNE del SNIT y Fincas del Estado ACC se listan número de finca e información del plano por cada finca traslapada. Fuentes: '+FUENTES.pne+' '+FUENTES.fincasAcc+' Información actualizada al '+FECHA_FUENTES+'.';
+  note.textContent='Área total del predio: '+uHa.toFixed(2)+' ha. Estimación de traslape calculada en CRTM05/EPSG:5367. Cada minimapa muestra el predio (amarillo) sobre la capa indicada, sin imagen aérea de fondo; la tenencia histórica incluye su ráster georreferenciado. Para esta última, el ráster es solo referencia visual y toda intersección o área proviene exclusivamente del vector enlazado con ITCO 1966. Fuentes: '+FUENTES.pne+' '+FUENTES.fincasAcc+' Información actualizada al '+FECHA_FUENTES+'.';
   rb.appendChild(note);
   rtSetMaps('pne',perLayer.map(entry=>'pne-'+entry.cfg.id));
   rtActivate('pne');
@@ -5158,9 +5268,10 @@ const FUENTES={
   esri:'Esri World Imagery (imagen aérea reciente)',
   terrenos3000:'Extraído de la capa de curvas de nivel cada 10 m de la Cartografía 1:25.000 del SNIT.',
   humedales:'Datos vectoriales WFS — Registro Nacional de Humedales, SINAC (publicado en SNIT).',
+  tenenciaRfrm:'Mapa sobre Tenencia de la Tierra de la Reserva Forestal Río Macho, MIRENEM–Dirección General Forestal, escala 1:50.000; información ITCO, junio de 1966. Vector: digitalización manual parcial SINAC-ACC.',
   propia:'Elaboración propia (SINAC-ACC).'
 };
-function pneFuente(id){return id==='fincasacc'?FUENTES.fincasAcc:(id==='pnesnit'?FUENTES.pne:(id==='terrenos3000'?FUENTES.terrenos3000:FUENTES.propia));}
+function pneFuente(id){return id==='tenenciarfrm'?FUENTES.tenenciaRfrm:(id==='fincasacc'?FUENTES.fincasAcc:(id==='pnesnit'?FUENTES.pne:(id==='terrenos3000'?FUENTES.terrenos3000:FUENTES.propia)));}
 function reportMapSource(cfg){
   if(cfg.pdfPlan){
     return (S.lastAerialDate||'Fuente: Esri World Imagery · imagen más actual disponible')+' · Dibujo del plano: '+(S.pdfName||'plano cargado');
@@ -5413,6 +5524,7 @@ function _drawStyledPolys(ctx,m,geojson,styleFn,scale){
     if(g.type==='Polygon'){_drawRings(ctx,m,g.coordinates,scale);ctx.fill('evenodd');}
     else if(g.type==='MultiPolygon'){g.coordinates.forEach(pp=>{_drawRings(ctx,m,pp,scale);ctx.fill('evenodd');});}
     ctx.globalAlpha=st.opacity!=null?st.opacity:0.95;ctx.strokeStyle=st.color||'#333';ctx.lineWidth=Math.max(0.6,(st.weight||1)*scale);
+    if(st.dashArray){const d=String(st.dashArray).trim().split(/[ ,]+/).map(Number).filter(n=>isFinite(n)&&n>0);ctx.setLineDash(d.map(n=>n*scale));}
     if(g.type==='Polygon'){_drawRings(ctx,m,g.coordinates,scale);ctx.stroke();}
     else if(g.type==='MultiPolygon'){g.coordinates.forEach(pp=>{_drawRings(ctx,m,pp,scale);ctx.stroke();});}
     ctx.restore();
@@ -5495,13 +5607,17 @@ async function captureAspMap(userGeoJSON,rows,zoom,w,h){
 async function capturePneMap(cfg,userGeoJSON,w,h){
   const gj=S.pneGJ[cfg.id];
   const ctxB=contextBoundsFor(userGeoJSON,gj);
+  let rasterImg=null;
+  if(cfg.rasterFile){try{rasterImg=await _loadImage('data/'+cfg.rasterFile+'?v='+APP_VERSION);}catch(e){console.warn('Ráster histórico no disponible para el informe',e);}}
   return await captureVectorMap(ctxB.bounds,ctxB.options,(ctx,m,s)=>{
-    if(gj)_drawStyledPolys(ctx,m,gj,()=>({color:cfg.color,fillColor:cfg.color,fillOpacity:0.32,weight:1.3,opacity:0.95}),s);
+    if(rasterImg){_drawImageOverlay(ctx,m,rasterImg,cfg.rasterBounds,s,cfg.rasterOpacity);_drawCoordGrid(ctx,m,w,h,s);}
+    if(gj)_drawStyledPolys(ctx,m,gj,f=>pneFeatureStyle(cfg,f,true),s);
     _drawAspReference(ctx,m,s,userGeoJSON);_drawCoverageMask(ctx,m,s);
     _drawFincaLabels(ctx,m,cfg,s,userGeoJSON);
     _drawUserOutline(ctx,m,userGeoJSON,s,'#f7d04a','rgba(247,208,74,0.18)',3);
     _drawPredioMarker(ctx,m,userGeoJSON,s);
-    const _pneItems=[{label:cfg.label,color:cfg.color}];
+    const _pneItems=cfg.type==='tenure'?pneTenenciaLegendItems():[{label:cfg.label,color:cfg.color}];
+    if(cfg.type==='tenure')_pneItems.push({label:'Ráster histórico (referencia)',color:'#d7c2a1',outline:true});
     if(cfg.type==='finca')_pneItems.push({label:'N.° de finca y plano (rótulo)',color:cfg.color,outline:true});
     _pneItems.push(ASP_REF_LEGEND_ITEM,PREDIO_LEGEND_ITEM,...maskLegendItems(m));
     _drawLegend(ctx,_pneItems,w,h,s,'Simbología');
@@ -5658,7 +5774,8 @@ function _buildDocBody(data){
       const img=data.pneImages&&data.pneImages[cfg.id];
       const title='<span style="display:inline-block;width:10px;height:10px;background:'+cfg.color+';border:1px solid #333;margin-right:5px"></span>'+htmlEsc(cfg.label);
       h+=_mapBlock(title,img,pneFuente(cfg.id),entryIndex>0);
-      h+='<table style="width:100%;border-collapse:collapse;font-size:11pt;margin:0 0 10px">';
+      if(cfg.type==='tenure')h+='<p style="font-size:8pt;color:#455f47;background:#eef6ee;border:1px solid #c8dbc9;padding:5px;line-height:1.4;margin:4px 0 6px">'+htmlEsc(PNE_TENENCIA_NOTE)+' El mapa presenta conjuntamente el ráster histórico y el vector digitalizado; las intersecciones y áreas se calculan exclusivamente con el vector.</p>';
+      h+='<table style="width:100%;border-collapse:collapse;font-size:'+(cfg.type==='tenure'?'6.6':'11')+'pt;margin:0 0 10px">';
       if(cfg.type==='finca'){
         h+='<tr style="background:'+azul+';color:#fff"><th style="border:1px solid #999;padding:4px">N° de finca</th><th style="border:1px solid #999;padding:4px">Información del plano</th><th style="border:1px solid #999;padding:4px">Área (ha)</th><th style="border:1px solid #999;padding:4px">% del predio</th></tr>';
         if(entry.items.length){
@@ -5668,6 +5785,18 @@ function _buildDocBody(data){
           h+='<tr style="background:#dce6f5;font-weight:bold"><td style="border:1px solid #999;padding:4px;text-align:right" colspan="2">Total</td><td style="border:1px solid #999;padding:4px;text-align:right">'+entry.totHa.toFixed(2)+'</td><td style="border:1px solid #999;padding:4px;text-align:right">'+entry.pct.toFixed(1)+'%</td></tr>';
         }else{
           h+='<tr><td style="border:1px solid #999;padding:4px" colspan="4">Sin traslape con el predio.</td></tr>';
+        }
+      }else if(cfg.type==='tenure'){
+        h+='<tr style="background:'+azul+';color:#fff"><th style="border:1px solid #999;padding:2px">ID</th><th style="border:1px solid #999;padding:2px">Propietario ITCO 1966</th><th style="border:1px solid #999;padding:2px">Símbolo</th><th style="border:1px solid #999;padding:2px">Monto / observación</th><th style="border:1px solid #999;padding:2px">Clase / detalle</th><th style="border:1px solid #999;padding:2px">Relación ASP</th><th style="border:1px solid #999;padding:2px">Área (ha)</th><th style="border:1px solid #999;padding:2px">% predio</th></tr>';
+        if(entry.items.length){
+          entry.items.forEach(it=>{const pct=uHa>0?it.ha/uHa*100:0;
+            const pago=(it.monto==='—'?'':it.monto)+(it.observacion==='—'?'':((it.monto==='—'?'':' · ')+it.observacion));
+            const clase=(it.clase==='—'?'':it.clase)+(it.detalle==='—'?'':((it.clase==='—'?'':' · ')+it.detalle));
+            h+='<tr><td style="border:1px solid #999;padding:2px;text-align:center">'+htmlEsc(it.id)+'</td><td style="border:1px solid #999;padding:2px">'+htmlEsc(it.propietario)+'</td><td style="border:1px solid #999;padding:2px">'+htmlEsc(it.simbolo)+'</td><td style="border:1px solid #999;padding:2px">'+htmlEsc(pago||'—')+'</td><td style="border:1px solid #999;padding:2px">'+htmlEsc(clase||'—')+'</td><td style="border:1px solid #999;padding:2px">'+htmlEsc(it.relacion)+'</td><td style="border:1px solid #999;padding:2px;text-align:right">'+it.ha.toFixed(2)+'</td><td style="border:1px solid #999;padding:2px;text-align:right">'+pct.toFixed(1)+'%</td></tr>';
+          });
+          h+='<tr style="background:#dce6f5;font-weight:bold"><td style="border:1px solid #999;padding:2px;text-align:right" colspan="6">Total</td><td style="border:1px solid #999;padding:2px;text-align:right">'+entry.totHa.toFixed(2)+'</td><td style="border:1px solid #999;padding:2px;text-align:right">'+entry.pct.toFixed(1)+'%</td></tr>';
+        }else{
+          h+='<tr><td style="border:1px solid #999;padding:3px" colspan="8">Sin traslape vectorial con el predio.</td></tr>';
         }
       }else{
         h+='<tr style="background:'+azul+';color:#fff"><th style="border:1px solid #999;padding:4px">Capa</th><th style="border:1px solid #999;padding:4px">Área (ha)</th><th style="border:1px solid #999;padding:4px">% del predio</th></tr>';
@@ -5774,7 +5903,7 @@ function _buildDocBody(data){
 
   // Nota metodológica
   h+='<p style="font-size:9pt;color:#555;margin-top:14px;border-top:1px solid #ccc;padding-top:6px;line-height:1.5">';
-  h+='<b>Nota metodológica:</b> Las áreas se calculan en proyección CRTM05/EPSG:5367, coincidentes con QGIS sobre los datos originales. En cobertura solo se reflejan clases con superficie &gt; 0.01 ha. Cada mapa incorpora grilla de coordenadas CRTM05, escala numérica y gráfica, flecha de norte e indicación de proyección y fuentes. Fuentes por capa: relieve (elaboración propia desde curvas de nivel a 10&nbsp;m, 1:25.000 SNIT); cobertura forestal (WFS SNIT 2021/2023 y CENIGA FONAFIFO 2000/2005); cauce y drenaje (WFS 1:25.000 SNIT); potencial de inundación (CNE, SNIT); ASP y PNE (WFS SINAC, SNIT); humedales (WFS Registro Nacional de Humedales, SINAC, SNIT); fincas del Estado ACC (proporcionada por el ACC). Información actualizada al '+FECHA_FUENTES+'. Documento generado por el Visor de Cobertura Forestal — PNLQ (SINAC-ACC).</p>';
+  h+='<b>Nota metodológica:</b> Las áreas se calculan en proyección CRTM05/EPSG:5367, coincidentes con QGIS sobre los datos originales. En cobertura solo se reflejan clases con superficie &gt; 0.01 ha. Cada mapa incorpora grilla de coordenadas CRTM05, escala numérica y gráfica, flecha de norte e indicación de proyección y fuentes. En la tenencia histórica R.F. Río Macho el ráster se utiliza solo como referencia visual, la geometría analítica es exclusivamente el vector y se adopta una incertidumbre planimétrica absoluta conservadora de aproximadamente 100 m. Fuentes por capa: relieve (elaboración propia desde curvas de nivel a 10&nbsp;m, 1:25.000 SNIT); cobertura forestal (WFS SNIT 2021/2023 y CENIGA FONAFIFO 2000/2005); cauce y drenaje (WFS 1:25.000 SNIT); potencial de inundación (CNE, SNIT); ASP y PNE (WFS SINAC, SNIT); humedales (WFS Registro Nacional de Humedales, SINAC, SNIT); fincas del Estado ACC (proporcionada por el ACC). Información actualizada al '+FECHA_FUENTES+'. Documento generado por el Visor de Cobertura Forestal — PNLQ (SINAC-ACC).</p>';
   return h;
 }
 

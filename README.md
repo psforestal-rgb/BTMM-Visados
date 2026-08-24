@@ -72,11 +72,14 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   muestra el nombre del cauce al pasar el cursor (sin geoproceso), y capas del **WMS
   de la Dirección de Agua** (`mapas.da.go.cr`) descubiertas automáticamente vía el
   proxy OGC, con toggles por capa y control de opacidad.
-- Módulo **Fincas estatales y PNE**: carga de cuatro capas locales (Buffer 2 km
-  Carretera Interamericana, PNE del SNIT, Terrenos sobre 3000 m y Fincas del Estado
-  ACC) y análisis "Info PNE" que genera un mini-mapa del predio por capa y la tabla
-  de estimación de traslape (área en ha y % del predio; con número de finca e
-  información del plano para PNE del SNIT y Fincas del Estado ACC).
+- Módulo **Fincas estatales y PNE**: carga de cinco capas locales (Buffer 2 km
+  Carretera Interamericana, PNE del SNIT, Terrenos sobre 3000 m, Fincas del Estado
+  ACC y Tenencia histórica R.F. Río Macho). La capa histórica presenta conjuntamente
+  el ráster georreferenciado y el vector digitalizado, con simbología compuesta por
+  `CLASE`, `DETALLE` y `RELAC. ASP`; sus intersecciones se calculan exclusivamente con
+  el vector. La tabla incorpora la unión por identificador con Hoja1, columna C, del
+  listado ITCO 1966 y se integra, junto con el mapa y la advertencia de incertidumbre
+  planimétrica aproximada de 100 m, en el informe Word exportable.
 - Botón de zoom al polígono cargado, disponible en todas las pestañas con visor.
 - Capa opcional de **imagen aérea reciente** (Esri World Imagery, con sobreampliación)
   como fondo del visor, activable desde la tarjeta de Referencias en todas las pestañas.
