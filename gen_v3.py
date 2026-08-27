@@ -777,7 +777,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-24-tenencia-rfrm-v53';
+const APP_VERSION='2026-08-27-ia-plano-v54';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6849,6 +6849,188 @@ PI.matchPolygons=function(A, B, opts){
   return best;
 };
 
+/* ── Lectura por CELDAS: reconstrucción de filas y columnas desde las cajas de
+   las palabras del OCR ────────────────────────────────────────────────────────
+   Leer la tabla como texto plano y quedarse con «los dos últimos números» falla
+   en cuanto el OCR intercala un número de más (una cota, un nº de mojón, el
+   ancho de una servidumbre): la fila se desplaza en silencio. Tesseract entrega
+   cada palabra con su caja; agrupando por Y se recuperan los renglones reales y
+   agrupando por X las COLUMNAS, de modo que «Este» y «Norte» se toman de su
+   columna y no de su posición dentro del renglón. */
+
+/* Agrupa palabras {text,bbox:{x0,y0,x1,y1},confidence} en renglones por
+   cercanía vertical. Devuelve renglones ordenados de arriba abajo, con las
+   palabras ordenadas por X. */
+PI.wordsToLines=function(words, opts){
+  opts=opts||{};
+  var ws=[];
+  (words||[]).forEach(function(w){
+    if(!w||!w.bbox)return;
+    var t=String(w.text==null?'':w.text).trim(); if(!t)return;
+    var b=w.bbox; if(!isFinite(b.y0)||!isFinite(b.y1)||!isFinite(b.x0)||!isFinite(b.x1))return;
+    ws.push({text:t,x0:+b.x0,x1:+b.x1,y0:+b.y0,y1:+b.y1,
+      cx:(+b.x0 + +b.x1)/2, cy:(+b.y0 + +b.y1)/2, h:Math.abs(+b.y1 - +b.y0),
+      conf:(w.confidence!=null&&isFinite(w.confidence))?+w.confidence:null});
+  });
+  if(!ws.length)return [];
+  var hs=ws.map(function(w){return w.h;}).sort(function(a,b){return a-b;});
+  var medH=hs[Math.floor(hs.length/2)]||10;
+  var tol=opts.rowTol!=null?opts.rowTol:medH*0.6;
+  ws.sort(function(a,b){return a.cy-b.cy||a.cx-b.cx;});
+  var lines=[],cur=null;
+  ws.forEach(function(w){
+    if(!cur||Math.abs(w.cy-cur.cy)>tol){cur={cy:w.cy,words:[w]};lines.push(cur);}
+    else{cur.words.push(w);cur.cy=(cur.cy*(cur.words.length-1)+w.cy)/cur.words.length;}
+  });
+  lines.forEach(function(l){l.words.sort(function(a,b){return a.x0-b.x0;});});
+  return lines.map(function(l){
+    var c=l.words.filter(function(w){return w.conf!=null;});
+    return {cy:l.cy,words:l.words,
+      text:l.words.map(function(w){return w.text;}).join(' '),
+      conf:c.length?c.reduce(function(s,w){return s+w.conf;},0)/c.length:null};
+  });
+};
+
+/* Detecta las columnas de una tabla a partir de los centros X de las palabras.
+   Devuelve los centros de columna ordenados de izquierda a derecha. La
+   tolerancia se deriva de la altura mediana del texto: dos columnas distintas
+   no se separan por menos de ~1,5 alturas de renglón. */
+PI.detectColumns=function(lines, opts){
+  opts=opts||{};
+  var xs=[],hs=[];
+  (lines||[]).forEach(function(l){l.words.forEach(function(w){xs.push(w.cx);hs.push(w.h);});});
+  if(xs.length<2)return [];
+  hs.sort(function(a,b){return a-b;});
+  var medH=hs[Math.floor(hs.length/2)]||10;
+  var tol=opts.colTol!=null?opts.colTol:medH*1.5;
+  var minCount=opts.minCount!=null?opts.minCount:2;
+  return PI.cluster1D(xs,tol).filter(function(c){return c.n>=minCount;})
+    .map(function(c){return c.pos;}).sort(function(a,b){return a-b;});
+};
+
+/* Convierte las palabras del OCR en filas estructuradas usando las columnas.
+   type='coords'  → {p,e,n}: se eligen las DOS columnas numéricas de mayor
+                    magnitud mediana (Este y Norte son órdenes de magnitud
+                    mayores que un nº de punto o una distancia); Este = la de la
+                    izquierda, Norte = la de la derecha.
+   'rumbo'/'azimut' → {line,dir,dist}: la distancia es la última columna
+                    numérica del renglón y la dirección, todo lo anterior.
+   Devuelve null si la evidencia tabular es insuficiente; entonces se usa el
+   camino de texto plano (piParseOCR) como respaldo. */
+PI.rowsFromWords=function(words, type, opts){
+  opts=opts||{};
+  var lines=PI.wordsToLines(words,opts);
+  if(lines.length<2)return null;
+  var cols=PI.detectColumns(lines,opts);
+  if(cols.length<2)return null;
+  function colOf(w){
+    var best=0,bd=Infinity;
+    for(var i=0;i<cols.length;i++){var d=Math.abs(w.cx-cols[i]);if(d<bd){bd=d;best=i;}}
+    return best;
+  }
+  // Celdas por [renglón][columna]: varias palabras de la misma celda se unen.
+  var grid=lines.map(function(l){
+    var cells=[];for(var i=0;i<cols.length;i++)cells.push({parts:[],conf:[]});
+    l.words.forEach(function(w){var c=colOf(w);cells[c].parts.push(w.text);if(w.conf!=null)cells[c].conf.push(w.conf);});
+    return cells.map(function(c){
+      return {text:c.parts.join(' ').trim(),
+        conf:c.conf.length?c.conf.reduce(function(s,v){return s+v;},0)/c.conf.length:null};
+    });
+  });
+  var rows=[],conf=[];
+  if(type==='coords'){
+    var mags=cols.map(function(_,ci){
+      var v=[];
+      grid.forEach(function(cells){var n=PI.parseCoord(cells[ci].text);if(isFinite(n)&&n!==0)v.push(Math.abs(n));});
+      if(v.length<2)return {ci:ci,med:0,n:v.length};
+      v.sort(function(a,b){return a-b;});
+      return {ci:ci,med:v[Math.floor(v.length/2)],n:v.length};
+    });
+    var big=mags.filter(function(m){return m.n>=2&&m.med>=1000;})
+      .sort(function(a,b){return b.med-a.med;}).slice(0,2)
+      .sort(function(a,b){return a.ci-b.ci;});
+    if(big.length<2)return null;
+    var ce=big[0].ci, cn=big[1].ci, cp=-1;
+    for(var k=0;k<ce;k++){if(mags[k].n>=2){cp=k;break;}}   // columna del nº de punto
+    grid.forEach(function(cells){
+      var e=PI.parseCoord(cells[ce].text), n=PI.parseCoord(cells[cn].text);
+      if(!isFinite(e)||!isFinite(n))return;                 // encabezado o renglón suelto
+      var p=cp>=0?cells[cp].text:'';
+      rows.push({p:String(p).trim()?p:(rows.length+1),e:cells[ce].text,n:cells[cn].text});
+      conf.push({p:100,e:cells[ce].conf!=null?cells[ce].conf:80,n:cells[cn].conf!=null?cells[cn].conf:80});
+    });
+  }else{
+    grid.forEach(function(cells,li){
+      var last=-1;
+      for(var i=cols.length-1;i>=0;i--){var d=PI.parseNumber(cells[i].text);if(isFinite(d)&&d>0){last=i;break;}}
+      if(last<=0)return;
+      var dirTxt=cells.slice(0,last).map(function(c){return c.text;}).join(' ').replace(/\s+/g,' ').trim();
+      if(!PI.parseBearing(dirTxt))return;                   // encabezado o renglón ilegible
+      rows.push({line:rows.length+1,dir:dirTxt,dist:cells[last].text});
+      var cd=lines[li].conf;
+      conf.push({dir:cd!=null?cd:70,dist:cells[last].conf!=null?cells[last].conf:70});
+    });
+  }
+  return rows.length>=3?{rows:rows,conf:conf,columns:cols.length,lines:lines.length,source:'celdas'}:null;
+};
+
+/* Lista blanca de caracteres del OCR según el tipo de extracción. Una única
+   lista estrecha para todo obliga a Tesseract a forzar las letras de los
+   encabezados a dígitos (que contaminan la tabla) y, a la vez, le faltaban G/M/S
+   y las comillas tipográficas que usan muchos derroteros. */
+PI.ocrCharWhitelist=function(type){
+  if(type==='coords')return '0123456789.,+- ';
+  return '0123456789.,°º\'"´`’‘″′NSEWOnsewoGMSgms:+- ';
+};
+
+/* ── Lectura asistida por IA remota ──────────────────────────────────────────
+   Normaliza y VALIDA la respuesta del servicio. Es contenido externo no
+   confiable: se comprueban forma, tipos, tamaño y contenido de cada celda, se
+   recortan los textos y se eliminan caracteres de control; nunca se ejecuta ni
+   se inserta como HTML. Devuelve {rows, conf, notes, warnings} para la tabla
+   editable — nunca para aceptarse sin revisión humana. */
+PI.sanitizeAIRows=function(payload, type, opts){
+  opts=opts||{};
+  var MAXROWS=opts.maxRows||400, MAXLEN=opts.maxCell||64;
+  var warnings=[];
+  if(!payload||typeof payload!=='object')
+    return {rows:[],conf:[],notes:'',warnings:['respuesta vacía o no interpretable']};
+  var src=Array.isArray(payload.rows)?payload.rows:(Array.isArray(payload.filas)?payload.filas:null);
+  if(!src)return {rows:[],conf:[],notes:'',warnings:['la respuesta no trae una lista de filas']};
+  if(src.length>MAXROWS){warnings.push('se recortó a '+MAXROWS+' filas (llegaron '+src.length+')');src=src.slice(0,MAXROWS);}
+  function clean(v){
+    if(v==null)return '';
+    if(typeof v==='number')return isFinite(v)?String(v):'';
+    if(typeof v!=='string')return '';
+    var s=v.replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim();
+    return s.length>MAXLEN?s.slice(0,MAXLEN):s;
+  }
+  function conf1(v){var n=(v==null)?NaN:+v;return isFinite(n)?Math.max(0,Math.min(100,n)):70;}
+  var rows=[],conf=[],descartadas=0;
+  src.forEach(function(r){
+    if(!r||typeof r!=='object'||Array.isArray(r)){descartadas++;return;}
+    var c=conf1(r.conf!=null?r.conf:r.confianza);
+    if(type==='coords'){
+      var e=clean(r.e!=null?r.e:(r.este!=null?r.este:r.x));
+      var n=clean(r.n!=null?r.n:(r.norte!=null?r.norte:r.y));
+      if(!isFinite(PI.parseCoord(e))||!isFinite(PI.parseCoord(n))){descartadas++;return;}
+      var p=clean(r.p!=null?r.p:(r.punto!=null?r.punto:''));
+      rows.push({p:p||(rows.length+1),e:e,n:n});
+      conf.push({p:100,e:c,n:c});
+    }else{
+      var dir=clean(r.dir!=null?r.dir:(r.rumbo!=null?r.rumbo:(r.azimut!=null?r.azimut:r.direccion)));
+      var dist=clean(r.dist!=null?r.dist:(r.distancia!=null?r.distancia:r.d));
+      if(!dir&&!dist){descartadas++;return;}
+      rows.push({line:rows.length+1,dir:dir,dist:dist});
+      conf.push({dir:c,dist:c});
+    }
+  });
+  if(descartadas)warnings.push(descartadas+' fila(s) sin datos utilizables se descartaron');
+  var notes=payload.notas!=null?payload.notas:(payload.notes!=null?payload.notes:'');
+  notes=(typeof notes==='string'?notes:'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,400);
+  return {rows:rows,conf:conf,notes:notes,warnings:warnings};
+};
+
 // Exporta al ámbito (window.PI en el navegador; module.exports en Node de prueba).
 root.PI=PI;
 if(typeof module!=='undefined'&&module.exports)module.exports=PI;
@@ -6863,6 +7045,10 @@ if(typeof module!=='undefined'&&module.exports)module.exports=PI;
    bloque PI (arriba). OCR con Tesseract.js cargado bajo demanda en un Web Worker.
    ══════════════════════════════════════════════════════════════════════════ */
 var PLANO_MAX_MB=40, PLANO_MAX_DIM=2600;
+/* Lado largo objetivo del recorte que se entrega al OCR (px). Tesseract pide
+   ~30 px de altura de texto; por debajo de eso el error por carácter sube
+   deprisa en tablas de coordenadas. */
+var PLANO_OCR_TARGET_PX=2200;
 S.plano=null;
 
 function piEsc(v){return htmlEsc(v);}
@@ -6923,7 +7109,8 @@ function piNewState(){
     adjust:{dx:0,dy:0,rot:0},adjHist:[],map:null,mapLayer:null,worker:null,
     planoAreaHa:null,build:null,locMethod:'coords',anchor:null,gridPts:[],cancelOCR:false,
     located:false,crsConfirmed:false,gridCrs:'EPSG:5367',gridPredioPx:null,shapeVerdict:null,
-    pdfTextLines:null,pdfNative:false,gridDetected:null,tracePx:null,traceSeed:null,traceOpts:null};
+    pdfTextLines:null,pdfNative:false,gridDetected:null,tracePx:null,traceSeed:null,traceOpts:null,
+    ocrSource:'',aiUsed:false,aiModel:null,aiNotes:'',aiWarnings:[]};
 }
 
 function openPlanoImport(){
@@ -7235,23 +7422,47 @@ function piMountRegion(){
 }
 function piRegionAll(){var b=piWorkingCanvas();S.plano.region={x:0,y:0,w:b.width,h:b.height};piMountRegion();}
 
-/* Canvas del recuadro a OCR, preprocesado (gris + contraste + binarización). */
-function piRegionCanvas(preprocess){
+/* Canvas del recuadro a OCR.
+   `preprocess` aplica gris + binarización LOCAL (media por ventana con sesgo,
+   estilo Bradley/Sauvola). Un umbral Otsu GLOBAL —lo que había antes— pierde
+   media tabla en cuanto el escaneo tiene sombra, gradiente o papel amarillento,
+   que es el caso normal de un plano catastrado fotocopiado; el umbral local se
+   adapta a cada zona. El sobremuestreo apunta a ~2200 px de lado largo porque
+   Tesseract necesita una altura de texto de ~30 px: con el objetivo anterior
+   (1400 px, factor máximo 2) las cifras de una tabla quedaban en 10-12 px y el
+   error por carácter se disparaba. Sin `preprocess` devuelve el recorte en color
+   (lo que conviene enviar a la lectura asistida por IA: los modelos de visión
+   leen mejor la imagen original que una binarizada). */
+function piRegionCanvas(preprocess,opts){
+  opts=opts||{};
   var st=S.plano, base=piWorkingCanvas();
   var r=st.region||{x:0,y:0,w:base.width,h:base.height};
-  var up=Math.min(2,Math.max(1,1400/Math.max(r.w,r.h)));   // sobremuestreo suave
+  var target=opts.maxDim||PLANO_OCR_TARGET_PX;
+  var up=Math.min(4,Math.max(1,target/Math.max(r.w,r.h)));
   var c=document.createElement('canvas');c.width=Math.round(r.w*up);c.height=Math.round(r.h*up);
   var ctx=c.getContext('2d',{willReadFrequently:true});
+  ctx.imageSmoothingEnabled=true;if('imageSmoothingQuality' in ctx)ctx.imageSmoothingQuality='high';
   ctx.drawImage(base,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
   if(preprocess){
-    var im=ctx.getImageData(0,0,c.width,c.height),d=im.data;
-    // gris + aumento de contraste + umbral Otsu simple
-    var hist=new Array(256).fill(0);
-    for(var i=0;i<d.length;i+=4){var g=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)|0;d[i]=d[i+1]=d[i+2]=g;hist[g]++;}
-    var total=c.width*c.height,sum=0;for(var k=0;k<256;k++)sum+=k*hist[k];
-    var sumB=0,wB=0,mx=0,thr=128;
-    for(var tt=0;tt<256;tt++){wB+=hist[tt];if(!wB)continue;var wF=total-wB;if(!wF)break;sumB+=tt*hist[tt];var mB=sumB/wB,mF=(sum-sumB)/wF,between=wB*wF*(mB-mF)*(mB-mF);if(between>mx){mx=between;thr=tt;}}
-    for(var j=0;j<d.length;j+=4){var v=d[j]>thr?255:0;d[j]=d[j+1]=d[j+2]=v;}
+    var W=c.width,H=c.height,im=ctx.getImageData(0,0,W,H),d=im.data,N=W*H;
+    var gray=new Uint8Array(N);
+    for(var i=0;i<N;i++){var j=i*4;gray[i]=(d[j]*0.299+d[j+1]*0.587+d[j+2]*0.114)|0;}
+    // Imagen integral → media en ventana en O(1) por píxel.
+    var ii=new Float64Array((W+1)*(H+1));
+    for(var y=0;y<H;y++){var rowAcc=0;
+      for(var x=0;x<W;x++){rowAcc+=gray[y*W+x];ii[(y+1)*(W+1)+(x+1)]=ii[y*(W+1)+(x+1)]+rowAcc;}}
+    var win=Math.max(15,Math.round(Math.min(W,H)/24))|1, rad=win>>1;
+    var bias=opts.bias!=null?opts.bias:0.86;   // píxel = tinta si < 86 % de la media local
+    for(var y2=0;y2<H;y2++){
+      var y0=Math.max(0,y2-rad), y1=Math.min(H-1,y2+rad);
+      for(var x2=0;x2<W;x2++){
+        var x0=Math.max(0,x2-rad), x1=Math.min(W-1,x2+rad);
+        var area=(x1-x0+1)*(y1-y0+1);
+        var s=ii[(y1+1)*(W+1)+(x1+1)]-ii[y0*(W+1)+(x1+1)]-ii[(y1+1)*(W+1)+x0]+ii[y0*(W+1)+x0];
+        var v=gray[y2*W+x2] < (s/area)*bias ? 0 : 255;
+        var k=(y2*W+x2)*4; d[k]=d[k+1]=d[k+2]=v; d[k+3]=255;
+      }
+    }
     ctx.putImageData(im,0,0);
   }
   return c;
@@ -7263,24 +7474,28 @@ function piRenderOCR(body){
   var nativa=(st.kind==='pdf'&&st.pdfTextLines&&st.pdfTextLines.length)?
     '<div class="pi-note pi-ok">Este PDF tiene <b>texto seleccionable</b> ('+st.pdfTextLines.length+' líneas): puede extraerlo <b>sin OCR</b> (más exacto).</div>'+
     '<div class="pi-row"><button class="pi-btn prim" onclick="piUsePdfText()">📄 Usar texto del PDF (sin OCR)</button></div>':'';
+  var ia=piAIDisponible()?
+    '<button class="pi-btn" id="pi-ai-run" onclick="piRunAI()">🤖 Leer con IA (envía el recuadro)</button>':'';
   body.innerHTML=nativa+'<div class="pi-note">Ejecute el OCR sobre el recuadro, o transcriba a mano si el texto es manuscrito o de baja calidad.</div>'+
     '<div class="pi-row">'+
-    '<button class="pi-btn'+(nativa?'':' prim')+'" id="pi-ocr-run" onclick="piRunOCR()">🔎 Ejecutar OCR</button>'+
+    '<button class="pi-btn'+(nativa?'':' prim')+'" id="pi-ocr-run" onclick="piRunOCR()">🔎 Ejecutar OCR (local)</button>'+
+    ia+
     '<button class="pi-btn" onclick="piSkipOCR()">✍️ Transcribir a mano</button>'+
     '<button class="pi-btn" id="pi-ocr-cancel" style="display:none" onclick="S.plano.cancelOCR=true">Detener</button></div>'+
     '<div id="pi-ocr-msg" style="font-size:12px;color:#9db4d6;margin-top:6px"></div>'+
+    (ia?'<div class="pi-note">El <b>OCR local</b> no envía nada fuera de su equipo y suele bastar con una tabla impresa nítida. La <b>lectura con IA</b> interpreta el recuadro como tabla (encabezados, columnas, unidades) y ayuda con planos fotocopiados, sellados o manuscritos, pero requiere enviar ese recorte.</div>'+piAIAviso():'')+
     '<div class="pi-canvas-wrap" id="pi-ocr-prev" style="margin-top:8px;max-height:260px;overflow:auto"></div>';
   var prev=document.getElementById('pi-ocr-prev');
   var c=piRegionCanvas(true);var sc=Math.min(1,900/c.width);var d=document.createElement('canvas');d.width=c.width*sc;d.height=c.height*sc;d.getContext('2d').drawImage(c,0,0,d.width,d.height);prev.appendChild(d);
   document.getElementById('pi-next').style.display='none';
 }
-function piSkipOCR(){var st=S.plano;st.ocrText='';st.pdfNative=false;st.rows=piEmptyRows(st.extractType);st.confRows=[];piGoStep('table');}
+function piSkipOCR(){var st=S.plano;st.ocrText='';st.pdfNative=false;st.ocrSource='manual';st.aiUsed=false;st.aiModel=null;st.aiNotes='';st.rows=piEmptyRows(st.extractType);st.confRows=[];piGoStep('table');}
 /* Usa el texto nativo del PDF (sin OCR): más exacto en planos digitales. */
 function piUsePdfText(){
   var st=S.plano;
   var text=(st.pdfTextLines||[]).join('\n');
   if(!text.trim()){piToast('El PDF no tiene texto utilizable; use OCR.',true,3500);return;}
-  st.ocrText=text;st.pdfNative=true;
+  st.ocrText=text;st.pdfNative=true;st.ocrSource='pdf-nativo';st.aiUsed=false;st.aiModel=null;st.aiNotes='';
   var parsed=piParseOCR(text,st.extractType,null);
   st.rows=parsed.rows;
   st.confRows=parsed.rows.map(function(){return st.extractType==='coords'?{p:100,e:99,n:99}:{dir:99,dist:99};});
@@ -7308,16 +7523,35 @@ async function piRunOCR(){
       logger:function(m){if(m.status&&m.progress!=null){piProg(true,m.progress);msg.textContent=m.status+' '+Math.round(m.progress*100)+'%';}}
     });
     st.worker=worker;
-    await worker.setParameters({tessedit_char_whitelist:'0123456789.,°\'"NSEWO nsewo-+ '});
+    /* PSM 6 = «un bloque uniforme de texto»: el recuadro ya está acotado a la
+       tabla, así que el análisis de página completa (PSM 3, el de por defecto)
+       solo consigue mezclar columnas o partir renglones. La lista blanca es por
+       tipo de extracción (PI.ocrCharWhitelist): una lista única y estrecha
+       forzaba las letras de los encabezados a dígitos y a la vez dejaba fuera
+       G/M/S y las comillas tipográficas de los derroteros. */
+    await worker.setParameters({
+      tessedit_char_whitelist:PI.ocrCharWhitelist(st.extractType),
+      tessedit_pageseg_mode:'6',
+      preserve_interword_spaces:'1',
+      user_defined_dpi:'300'
+    });
     if(st.cancelOCR){piReleaseOCR();msg.textContent='OCR detenido.';piProg(false);runBtn.disabled=false;cancelBtn.style.display='none';return;}
     var canvas=piRegionCanvas(true);
     var res=await worker.recognize(canvas);
     piReleaseOCR();
     st.ocrText=res.data.text||'';
-    var conf=(res.data.words||[]).length?res.data.words:[];
-    st.parsed=piParseOCR(st.ocrText,st.extractType,res.data);
+    /* Primero se intenta la lectura por CELDAS (cajas de las palabras): así
+       «Este» y «Norte» salen de su columna y un número intercalado no desplaza
+       la fila entera. Si la tabla no se reconstruye, se cae al texto plano. */
+    var byCells=null;
+    try{ byCells=PI.rowsFromWords(res.data.words||[],st.extractType); }
+    catch(err){ console.warn('lectura por celdas:',err); }
+    if(byCells){ st.parsed=byCells; st.ocrSource='celdas'; }
+    else { st.parsed=piParseOCR(st.ocrText,st.extractType,res.data); st.ocrSource='texto'; }
     st.rows=st.parsed.rows;st.confRows=st.parsed.conf;
-    piProg(false);msg.textContent='OCR terminado. Revise y corrija en la tabla.';
+    st.aiUsed=false;st.aiModel=null;st.aiNotes='';
+    piProg(false);
+    msg.textContent='OCR terminado ('+(byCells?('tabla reconstruida: '+byCells.columns+' columnas, '+st.rows.length+' filas'):'lectura por líneas')+'). Revise y corrija en la tabla.';
     piGoStep('table');
   }catch(e){
     piReleaseOCR();piProg(false);
@@ -7326,6 +7560,122 @@ async function piRunOCR(){
     console.error(e);
   }
 }
+/* ══════════════════════════════════════════════════════════════════════════
+   LECTURA ASISTIDA POR IA (opcional, remota, bajo consentimiento explícito)
+   ──────────────────────────────────────────────────────────────────────────
+   El OCR local (Tesseract) resuelve bien una tabla impresa y limpia, pero se
+   queda corto en planos fotocopiados, con sellos encima, con la tabla girada o
+   con cifras manuscritas. Para esos casos se puede pedir la lectura a un modelo
+   de visión, que interpreta la tabla como tal (encabezados, columnas, unidades)
+   en vez de reconocer glifos sueltos.
+
+   Reglas del canal, en este orden de importancia:
+
+   1. NO es el camino por defecto y NO se usa nunca sin que la persona lo pida.
+      El asistente sigue funcionando entero sin red y sin IA.
+   2. Sale del navegador ÚNICAMENTE el recuadro que la persona marcó en el paso
+      «Recuadro a leer» (la tabla o el derrotero), nunca la lámina completa: así
+      no viajan el nombre del propietario, la cédula ni el número de plano.
+   3. La llamada va al Worker propio (psforgis-ocg), que es quien guarda la clave
+      del proveedor. El visor sigue sin secretos: aquí no hay ninguna clave.
+   4. La respuesta es contenido externo NO CONFIABLE: se valida con
+      PI.sanitizeAIRows (forma, tipos, tamaño, caracteres) y se escapa al
+      mostrarla. Nunca se acepta sola: siempre desemboca en la tabla editable
+      con confirmación humana, igual que el OCR local.
+   5. Queda registrado en la procedencia del polígono (fuenteTexto 'ia-remota',
+      modelo y qué se envió), de modo que el informe diga cómo se leyó el plano.
+   ══════════════════════════════════════════════════════════════════════════ */
+var PI_AI_ENDPOINT='https://psforgis-ocg.psforestal.workers.dev/ia-plano';
+var PI_AI_MAX_PX=1600;          // lado largo del recorte que se envía
+var PI_AI_TIMEOUT_MS=60000;
+var PI_AI_CONSENT_KEY='btmm-ia-plano-consentimiento';
+
+/* ¿Tiene sentido ofrecer la IA? Requiere red (en file:// no hay CDN ni Worker). */
+function piAIDisponible(){
+  return location.protocol==='http:'||location.protocol==='https:';
+}
+function piAIConsentido(){
+  try{ return sessionStorage.getItem(PI_AI_CONSENT_KEY)==='1'; }catch(e){ return false; }
+}
+function piAIGuardarConsentimiento(){
+  try{ sessionStorage.setItem(PI_AI_CONSENT_KEY,'1'); }catch(e){}
+}
+
+/* Recorte que se envía: el recuadro marcado, en color y a resolución moderada
+   (los modelos de visión leen mejor el original que una imagen binarizada). */
+function piAICanvas(){
+  return piRegionCanvas(false,{maxDim:PI_AI_MAX_PX});
+}
+
+function piAIAviso(){
+  var st=S.plano;
+  var r=st.region;
+  var dim=r?(Math.round(r.w)+'×'+Math.round(r.h)+' px'):'toda la imagen';
+  return '<div class="pi-note pi-warn"><b>Esto envía datos fuera de su equipo.</b> '+
+    'Se enviará <b>únicamente el recuadro marcado</b> ('+piEsc(dim)+') al servicio de IA, '+
+    'a través del Worker de PSF; no se envía la lámina completa, ni el nombre del propietario, '+
+    'ni la cédula, ni el número de plano, salvo que estén dentro del recuadro que usted marcó. '+
+    'Si el plano es confidencial, use el OCR local o la transcripción a mano.</div>';
+}
+
+/* Pide la lectura al Worker y deja el resultado en la tabla editable. */
+async function piRunAI(){
+  var st=S.plano;
+  if(!piAIDisponible()){piToast('La lectura con IA necesita conexión (no funciona abriendo el archivo directamente).',true,5000);return;}
+  if(!piAIConsentido()){
+    if(!confirm('Se enviará el recuadro marcado del plano a un servicio de IA externo (a través del Worker de PSF) para interpretarlo.\n\n'+
+      'No se envía la lámina completa. El resultado siempre pasa por la tabla editable y su confirmación.\n\n¿Continuar?'))return;
+    piAIGuardarConsentimiento();
+  }
+  var btn=document.getElementById('pi-ai-run'), msg=document.getElementById('pi-ocr-msg');
+  if(btn)btn.disabled=true;
+  piProg(true,0.15);
+  if(msg)msg.textContent='Enviando el recuadro al servicio de IA…';
+  var ctl=(typeof AbortController!=='undefined')?new AbortController():null;
+  var timer=setTimeout(function(){if(ctl)ctl.abort();},PI_AI_TIMEOUT_MS);
+  try{
+    var canvas=piAICanvas();
+    var dataUrl=canvas.toDataURL('image/png');
+    var b64=dataUrl.slice(dataUrl.indexOf(',')+1);
+    piProg(true,0.45);
+    if(msg)msg.textContent='La IA está interpretando el recuadro…';
+    var resp=await fetch(PI_AI_ENDPOINT,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tipo:st.extractType,formato:'image/png',imagen:b64,version:APP_VERSION}),
+      signal:ctl?ctl.signal:undefined
+    });
+    clearTimeout(timer);
+    if(!resp.ok){
+      var det='';
+      try{ var je=await resp.json(); det=je&&(je.error||je.mensaje)?(': '+String(je.error||je.mensaje).slice(0,160)):''; }catch(e){}
+      throw new Error('el servicio respondió '+resp.status+det);
+    }
+    var payload=await resp.json();
+    piProg(true,0.85);
+    var clean=PI.sanitizeAIRows(payload,st.extractType);
+    if(!clean.rows.length)throw new Error('la IA no devolvió filas utilizables'+(clean.warnings.length?' ('+clean.warnings[0]+')':''));
+    st.rows=clean.rows;st.confRows=clean.conf;
+    st.ocrText=(payload&&typeof payload.texto==='string')?payload.texto.slice(0,20000):'';
+    st.pdfNative=false;st.ocrSource='ia';
+    st.aiUsed=true;
+    st.aiModel=(payload&&typeof payload.modelo==='string')?payload.modelo.replace(/[^\w.:@\/-]/g,'').slice(0,80):'desconocido';
+    st.aiNotes=clean.notes;
+    st.aiWarnings=clean.warnings;
+    piProg(false);
+    if(msg)msg.textContent='Lectura con IA terminada ('+clean.rows.length+' filas). Verifique CADA valor contra el plano.';
+    piToast('Lectura con IA incorporada. Verifique cada valor contra el plano antes de continuar.',false,5000);
+    piGoStep('table');
+  }catch(e){
+    clearTimeout(timer);
+    piProg(false);
+    var m=(e&&e.name==='AbortError')?'el servicio tardó demasiado':(e&&e.message?e.message:'error desconocido');
+    if(msg)msg.innerHTML='<span style="color:#ffc9c9">No se pudo leer con IA ('+piEsc(m)+'). Use el OCR local o transcriba a mano.</span>';
+    if(btn)btn.disabled=false;
+    console.error(e);
+  }
+}
+
 function piReleaseOCR(){var st=S.plano;if(st&&st.worker){try{st.worker.terminate();}catch(e){}st.worker=null;}}
 function piProg(show,frac){var w=document.getElementById('pi-progwrap'),b=document.getElementById('pi-prog');if(!w)return;w.style.display=show?'block':'none';if(b)b.style.width=Math.round((frac||0)*100)+'%';}
 
@@ -7333,8 +7683,15 @@ function piProg(show,frac){var w=document.getElementById('pi-progwrap'),b=docume
 function piParseOCR(text,type,data){
   var lines=(text||'').split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean);
   var rows=[],conf=[];
-  var wordsByLine={};
-  if(data&&data.lines){data.lines.forEach(function(l,i){wordsByLine[i]=(l.confidence!=null?l.confidence:100);});}
+  /* Confianza por renglón. `lines` viene del texto ya filtrado (sin renglones
+     vacíos), así que indexar data.lines por ese índice desalineaba las
+     confianzas: se emparejan por el TEXTO del renglón. */
+  var confByText={};
+  if(data&&data.lines){data.lines.forEach(function(l){
+    var k=String(l.text==null?'':l.text).replace(/\s+/g,' ').trim();
+    if(k&&confByText[k]==null)confByText[k]=(l.confidence!=null?l.confidence:100);
+  });}
+  function lineConf(ln,dflt){var v=confByText[String(ln).replace(/\s+/g,' ').trim()];return v!=null?v:dflt;}
   if(type==='coords'){
     var p=0;
     lines.forEach(function(ln,i){
@@ -7347,7 +7704,8 @@ function piParseOCR(text,type,data){
       if(vals.length>=3){pt=vals[0];e=vals[vals.length-2];n=vals[vals.length-1];}
       else{pt=++p;e=vals[0];n=vals[1];}
       rows.push({p:pt,e:e,n:n});
-      conf.push({p:100,e:wordsByLine[i]||80,n:wordsByLine[i]||80});
+      var ce=lineConf(ln,80);
+      conf.push({p:100,e:ce,n:ce});
     });
   }else{
     lines.forEach(function(ln,i){
@@ -7356,7 +7714,8 @@ function piParseOCR(text,type,data){
       var b=PI.parseBearing(leg.dir);
       if(!b&&!isFinite(leg.dist))return;
       rows.push({line:rows.length+1,dir:leg.dir,dist:isFinite(leg.dist)?leg.dist:''});
-      conf.push({dir:wordsByLine[i]||70,dist:wordsByLine[i]||70});
+      var cl=lineConf(ln,70);
+      conf.push({dir:cl,dist:cl});
     });
   }
   if(!rows.length)rows=piEmptyRows(type);
@@ -7369,7 +7728,14 @@ function piRenderTable(body){
   var isC=st.extractType==='coords';
   var head=isC?'<tr><th>Punto</th><th>Este / X</th><th>Norte / Y</th><th></th></tr>':
     '<tr><th>Línea</th><th>'+(st.extractType==='rumbo'?'Rumbo':'Azimut')+'</th><th>Distancia</th><th></th></tr>';
-  body.innerHTML='<div class="pi-note">Revise y corrija cada celda. Las celdas resaltadas indican baja confianza o valores dudosos. Puede agregar o eliminar filas.</div>'+
+  var avisoIA=st.aiUsed?
+    '<div class="pi-note pi-warn"><b>Lectura hecha por IA remota</b>'+(st.aiModel?' ('+piEsc(st.aiModel)+')':'')+
+    '. Un modelo puede inventar cifras plausibles: <b>verifique vértice por vértice contra el plano</b> antes de continuar. '+
+    'El área calculada y el error de cierre del paso siguiente son la comprobación cruzada más útil.'+
+    (st.aiNotes?'<div style="margin-top:4px">Observaciones del modelo: '+piEsc(st.aiNotes)+'</div>':'')+
+    ((st.aiWarnings&&st.aiWarnings.length)?'<div style="margin-top:4px">⚠ '+piEsc(st.aiWarnings.join('; '))+'</div>':'')+
+    '</div>':'';
+  body.innerHTML=avisoIA+'<div class="pi-note">Revise y corrija cada celda. Las celdas resaltadas indican baja confianza o valores dudosos. Puede agregar o eliminar filas.</div>'+
     '<div class="pi-row"><button class="pi-tool" onclick="piAddRow()">＋ Fila</button>'+
     '<span id="pi-tbl-msg" style="font-size:12px"></span></div>'+
     '<div style="max-height:52vh;overflow:auto"><table class="pi-table"><thead>'+head+'</thead><tbody id="pi-tbody"></tbody></table></div>';
@@ -7925,6 +8291,7 @@ function piRenderAccept(body){
     '<table class="pi-table"><tbody>'+
     '<tr><th>Archivo fuente</th><td>'+piEsc(st.name)+'</td></tr>'+
     '<tr><th>Tipo de extracción</th><td>'+piEsc(st.extractType)+'</td></tr>'+
+    '<tr><th>Lectura del texto</th><td>'+piEsc(st.extractType==='trace'?'trazado del contorno':(st.aiUsed?('IA remota'+(st.aiModel?' · '+st.aiModel:'')):(st.pdfNative?'texto nativo del PDF':(st.ocrText?'OCR local'+(st.ocrSource==='celdas'?' (por celdas)':''):'transcripción manual'))))+'</td></tr>'+
     '<tr><th>CRS original</th><td>'+piEsc(st.extractType==='coords'?st.crs:(st.extractType==='trace'?('trazado sobre cuadrícula '+st.gridCrs):'derrotero local'))+'</td></tr>'+
     '<tr><th>Área</th><td>'+haNow.toFixed(4)+' ha</td></tr>'+
     '<tr><th>Método de ubicación</th><td>'+piEsc(st.locMethod)+(st.located?' <span style="color:#bff0cf">✔ aplicada</span>':' <span style="color:#ffc9c9">✕ no aplicada</span>')+'</td></tr>'+
@@ -7942,7 +8309,11 @@ function piBuildProvenance(){
     origen:'plano',
     archivoFuente:st.name,
     tipoExtraccion:st.extractType,
-    fuenteTexto:st.extractType==='trace'?'trazado-contorno':(st.pdfNative?'pdf-nativo':(st.ocrText?'ocr':'manual')),
+    fuenteTexto:st.extractType==='trace'?'trazado-contorno':(st.aiUsed?'ia-remota':(st.pdfNative?'pdf-nativo':(st.ocrText?'ocr':'manual'))),
+    lecturaIA:!!st.aiUsed,
+    iaModelo:st.aiUsed?st.aiModel:null,
+    iaEnviado:st.aiUsed?'recuadro-marcado':null,
+    ocrReconstruccion:st.ocrSource||null,
     crsOriginal:st.extractType==='coords'?st.crs:(st.extractType==='trace'?('trazado/'+st.gridCrs):'derrotero-local'),
     datosTranscritos:st.rows,
     areaHa:+haNow.toFixed(4),
@@ -8183,6 +8554,12 @@ checks = {
     "Descubrimiento via proxy": "fetch(viaProxy(c.capsUrl)" in HTML,
     "Wayback config directo (no proxy)": "fetch('https://s3-us-west-2.amazonaws.com" in HTML,
     "Capa de humedales en Terrenos Forestales": "TERRAIN_HUMEDALES_GPKG_URL" in HTML and "function loadTerrainHumedalesData" in HTML and 'id="cb-terrain-humedales"' in HTML and "Registro Nacional de Humedales" in HTML and "captureTerrainMap('humedales'" in HTML,
+    "OCR por celdas (cajas de palabras)": "PI.rowsFromWords=" in HTML and "PI.wordsToLines=" in HTML and "PI.detectColumns=" in HTML and "byCells=PI.rowsFromWords" in HTML,
+    "OCR con PSM de tabla y lista blanca por tipo": "tessedit_pageseg_mode:'6'" in HTML and "PI.ocrCharWhitelist=" in HTML and "preserve_interword_spaces:'1'" in HTML,
+    "Binarizacion local (no Otsu global) del recuadro OCR": "PLANO_OCR_TARGET_PX" in HTML and "imagen integral" in HTML.lower(),
+    "Lectura asistida por IA (opt-in, via Worker)": "PI_AI_ENDPOINT=" in HTML and "/ia-plano" in HTML and "function piRunAI" in HTML and "PI.sanitizeAIRows=" in HTML and "piAIAviso" in HTML,
+    "IA registrada en la procedencia": "lecturaIA:" in HTML and "iaModelo:" in HTML and "iaEnviado:" in HTML,
+    "Endpoint de IA dentro de connect-src": "psforgis-ocg.psforestal.workers.dev" in HTML,
 }
 for name,result in checks.items():
     print(f"  {'✅' if result else '❌'} {name}")

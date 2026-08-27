@@ -14,8 +14,10 @@
 - PDF.js opera con `isEvalSupported:false` (mitiga CVE-2024-4367: un PDF
   malicioso no puede ejecutar JavaScript).
 - El asistente **«Importar predio desde plano»** procesa el plano y ejecuta el
-  **OCR íntegramente en el navegador**: no hay servicio externo de OCR y ni el
-  plano ni las coordenadas transcritas se envían a ningún servidor. Tesseract.js
+  **OCR íntegramente en el navegador**: por defecto no hay servicio externo de
+  OCR y ni el plano ni las coordenadas transcritas se envían a ningún servidor.
+  La **única excepción**, opcional y bajo consentimiento explícito, es la
+  «Lectura con IA» descrita más abajo. Tesseract.js
   se carga **bajo demanda** (solo al abrir el asistente), con **SRI** en el script
   principal y en un **Web Worker**; sus recursos (worker, core WASM y modelo de
   idioma) se sirven desde jsDelivr, dentro de la CSP vigente (`script-src`/
@@ -24,8 +26,31 @@
   plano), el texto del OCR se **escapa** antes de mostrarse y los workers, canvas
   e imágenes se liberan al terminar o cancelar. La geometría resultante se marca
   como «derivada de plano» y debe verificarse contra la cartografía oficial.
+- **Lectura asistida por IA (opcional, desactivada mientras no se despliegue el
+  endpoint).** Dentro del asistente, la persona puede pedir que un modelo de
+  visión remoto interprete el cuadro de datos. Condiciones del canal:
+  - **Nunca es el camino por defecto** y nunca se usa sin una confirmación
+    explícita, con aviso de qué se envía y a dónde. Solo se ofrece sobre
+    `http(s)`; en `file://` el botón no existe.
+  - Sale del navegador **únicamente el recuadro que la persona marcó** (la tabla
+    o el derrotero), reescalado a 1600 px de lado largo — **no** la lámina
+    completa, de modo que no viajan el nombre del propietario, la cédula ni el
+    número de plano salvo que estén dentro de ese recuadro.
+  - La llamada va al **Worker propio** (`psforgis-ocg`, ruta `/ia-plano`), que es
+    quien custodia la clave del proveedor como secreto de Cloudflare: **el visor
+    sigue sin secretos** y la CSP no se relajó (ese origen ya estaba en
+    `connect-src` por el proxy OGC).
+  - La respuesta es **contenido externo no confiable**: se valida con
+    `PI.sanitizeAIRows` (forma, tipos, ≤400 filas, ≤64 caracteres por celda, sin
+    caracteres de control), se escapa al mostrarla y **jamás se acepta sola** —
+    siempre desemboca en la tabla editable con confirmación humana, y queda
+    registrada en la procedencia (`fuenteTexto: 'ia-remota'`, modelo y qué se
+    envió). Detalle completo en `docs/ia-plano.md`.
 - El proxy OGC (Cloudflare Worker) tiene lista blanca de dominios destino,
-  bloqueo de IPs privadas, límites de tamaño/tiempo y no maneja credenciales.
+  bloqueo de IPs privadas, límites de tamaño/tiempo y no maneja credenciales. El
+  endpoint `/ia-plano` del mismo Worker sí custodia una clave de API: tiene lista
+  blanca de orígenes, límite de tamaño de imagen y limitador de tasa por IP
+  (código en `docs/worker-ia-plano.js`).
 
 ## Reportar una vulnerabilidad
 
@@ -50,5 +75,7 @@ planos confidenciales.
 ## Alcance
 
 Este repositorio cubre el visor (`index.html`, `gen_v3.py`, `data/`). El
-Worker proxy se administra en Cloudflare y no forma parte del repo; los
-servicios SNIT/Esri/Dirección de Agua son de terceros.
+Worker proxy se administra en Cloudflare y no forma parte del repo — su código
+de referencia para `/ia-plano` sí se versiona aquí (`docs/worker-ia-plano.js`)
+para que el contrato quede junto al cliente que lo consume; los servicios
+SNIT/Esri/Dirección de Agua y el proveedor de IA son de terceros.

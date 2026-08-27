@@ -434,5 +434,116 @@ t('resampleClosed devuelve K puntos sobre el perímetro', () => {
   assert(rs.length === 40, 'len=' + rs.length);
 });
 
+console.log('\n20) Lectura por celdas (cajas de palabras del OCR)');
+// Tabla sintética: 3 columnas (Punto, Este, Norte) × encabezado + 4 filas.
+function w(text, x, y, conf = 90) {
+  return { text: String(text), confidence: conf, bbox: { x0: x, x1: x + String(text).length * 9, y0: y, y1: y + 18 } };
+}
+const COLX = { p: 40, e: 200, n: 400 };
+function tablaCoords(filas, extra = []) {
+  const out = [w('PTO', COLX.p, 10), w('ESTE', COLX.e, 10), w('NORTE', COLX.n, 10)];
+  filas.forEach((f, i) => {
+    const y = 40 + i * 30;
+    out.push(w(f[0], COLX.p, y), w(f[1], COLX.e, y), w(f[2], COLX.n, y));
+  });
+  return out.concat(extra);
+}
+const FILAS = [['1', '512345.67', '1098765.43'], ['2', '512400.10', '1098800.20'],
+['3', '512450.55', '1098700.00'], ['4', '512380.00', '1098650.75']];
+
+t('agrupa palabras en renglones por Y', () => {
+  const lines = PI.wordsToLines(tablaCoords(FILAS));
+  assert(lines.length === 5, 'renglones=' + lines.length);
+  assert(lines[1].words.length === 3, 'palabras en el renglón 1=' + lines[1].words.length);
+});
+t('detecta 3 columnas por los centros X', () => {
+  const cols = PI.detectColumns(PI.wordsToLines(tablaCoords(FILAS)));
+  assert(cols.length === 3, 'columnas=' + cols.length);
+});
+t('rowsFromWords toma Este/Norte de su columna', () => {
+  const r = PI.rowsFromWords(tablaCoords(FILAS), 'coords');
+  assert(r && r.rows.length === 4, 'filas=' + (r && r.rows.length));
+  assert(near(PI.parseCoord(r.rows[0].e), 512345.67, 1e-4), 'e=' + r.rows[0].e);
+  assert(near(PI.parseCoord(r.rows[0].n), 1098765.43, 1e-4), 'n=' + r.rows[0].n);
+  assert(String(r.rows[3].p) === '4', 'punto=' + r.rows[3].p);
+});
+t('un número intercalado NO desplaza la fila (fallo del texto plano)', () => {
+  // Una cota suelta a la derecha de la tabla: el camino de texto plano tomaría
+  // «los dos últimos números» y leería Norte donde hay una cota.
+  const extra = [w('1250', 620, 40), w('1310', 620, 70)];
+  const r = PI.rowsFromWords(tablaCoords(FILAS, extra), 'coords');
+  assert(near(PI.parseCoord(r.rows[0].n), 1098765.43, 1e-4), 'n=' + r.rows[0].n);
+  assert(near(PI.parseCoord(r.rows[1].n), 1098800.20, 1e-4), 'n=' + r.rows[1].n);
+  // Y el texto plano, con la misma línea, sí se equivoca:
+  const plano = PI.parseCoord('1250');
+  assert(isFinite(plano), 'control');
+});
+t('descarta el encabezado (no numérico)', () => {
+  const r = PI.rowsFromWords(tablaCoords(FILAS), 'coords');
+  assert(r.rows.every((x) => isFinite(PI.parseCoord(x.e))), 'hay filas no numéricas');
+});
+t('derrotero por celdas: rumbo + distancia', () => {
+  const words = [];
+  [['N 45° 30\' 00" E', '125.40'], ['S 12° 10\' 00" E', '98.15'],
+  ['S 60° 00\' 00" O', '140.00'], ['N 20° 00\' 00" O', '110.25']].forEach((f, i) => {
+    const y = 40 + i * 30;
+    f[0].split(' ').forEach((tok, k) => words.push(w(tok, 40 + k * 45, y)));
+    words.push(w(f[1], 340, y));
+  });
+  const r = PI.rowsFromWords(words, 'rumbo');
+  assert(r && r.rows.length === 4, 'filas=' + (r && r.rows.length));
+  assert(PI.parseBearing(r.rows[0].dir).azimuth === 45.5, 'az=' + PI.parseBearing(r.rows[0].dir).azimuth);
+  assert(near(PI.parseNumber(r.rows[2].dist), 140, 1e-9), 'dist=' + r.rows[2].dist);
+});
+t('sin evidencia tabular devuelve null (cae al texto plano)', () => {
+  assert(PI.rowsFromWords([w('512345.67', 10, 10)], 'coords') === null);
+  assert(PI.rowsFromWords([], 'coords') === null);
+});
+t('lista blanca del OCR por tipo', () => {
+  const c = PI.ocrCharWhitelist('coords'), b = PI.ocrCharWhitelist('rumbo');
+  assert(!/[NSEWO]/.test(c), 'coords no debe admitir letras de cuadrante');
+  assert(/N/.test(b) && /G/.test(b) && /°/.test(b), 'el derrotero necesita N/G/°');
+});
+
+console.log('\n21) Validación de la respuesta de la IA remota (contenido no confiable)');
+t('normaliza filas de coordenadas y acepta nombres en español', () => {
+  const r = PI.sanitizeAIRows({ filas: [{ punto: '1', este: '512345,67', norte: '1098765,43', confianza: 91 }] }, 'coords');
+  assert(r.rows.length === 1 && r.rows[0].p === '1', JSON.stringify(r.rows));
+  assert(near(PI.parseCoord(r.rows[0].e), 512345.67, 1e-4));
+  assert(r.conf[0].e === 91, 'conf=' + r.conf[0].e);
+});
+t('descarta filas sin coordenadas interpretables', () => {
+  const r = PI.sanitizeAIRows({ rows: [{ e: 'no sé', n: '1098765' }, { e: '512345', n: '1098765' }] }, 'coords');
+  assert(r.rows.length === 1, 'filas=' + r.rows.length);
+  assert(r.warnings.length === 1 && /descartaron/.test(r.warnings[0]), JSON.stringify(r.warnings));
+});
+t('recorta celdas largas y elimina caracteres de control', () => {
+  const r = PI.sanitizeAIRows({ rows: [{ dir: 'N 45 E' + '\u0000\u001b' + '\n'.repeat(3) + 'x'.repeat(200), dist: '10' }] }, 'rumbo');
+  assert(r.rows[0].dir.length <= 64, 'len=' + r.rows[0].dir.length);
+  assert(!/[\u0000-\u001f]/.test(r.rows[0].dir), 'quedaron caracteres de control');
+});
+t('respuesta sin lista de filas → sin filas y con aviso', () => {
+  assert(PI.sanitizeAIRows({ ok: true }, 'coords').rows.length === 0);
+  assert(PI.sanitizeAIRows(null, 'coords').warnings.length === 1);
+  assert(PI.sanitizeAIRows('<script>alert(1)</script>', 'coords').rows.length === 0);
+});
+t('limita el número de filas', () => {
+  const muchas = Array.from({ length: 500 }, () => ({ e: '512345', n: '1098765' }));
+  const r = PI.sanitizeAIRows({ rows: muchas }, 'coords', { maxRows: 400 });
+  assert(r.rows.length === 400, 'filas=' + r.rows.length);
+  assert(/recortó/.test(r.warnings[0]), JSON.stringify(r.warnings));
+});
+t('las notas del modelo llegan como texto plano acotado', () => {
+  const r = PI.sanitizeAIRows({ rows: [{ e: '512345', n: '1098765' }], notas: 'x'.repeat(900) }, 'coords');
+  assert(r.notes.length === 400, 'len=' + r.notes.length);
+});
+t('el resultado de la IA entra en el mismo camino determinista', () => {
+  const r = PI.sanitizeAIRows({
+    rows: [{ e: '0', n: '0' }, { e: '100', n: '0' }, { e: '100', n: '100' }, { e: '0', n: '100' }]
+  }, 'coords');
+  const b = PI.buildFromCoords(r.rows.map((x) => [PI.parseCoord(x.e), PI.parseCoord(x.n)]));
+  assert(near(b.area, 10000, 1e-6), 'area=' + b.area);
+});
+
 console.log('\nRESULTADO: ' + pass + ' ok, ' + fail + ' fallo(s)');
 process.exit(fail ? 1 : 0);

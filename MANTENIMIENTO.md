@@ -9,9 +9,11 @@ Sitio **100 % estático** en GitHub Pages: un `index.html` autosuficiente
 (datos de cobertura embebidos gzip+base64) generado por `gen_v3.py`, más
 capas GPKG en `data/` que se descargan bajo demanda. **No hay backend, base
 de datos, variables de entorno ni secretos**; todo el geoproceso corre en el
-navegador. La única pieza de infraestructura propia es el proxy OGC
-(Cloudflare Worker `psforgis-ocg`), que solo añade CORS y caché a servicios
-públicos.
+navegador. La única pieza de infraestructura propia es el Worker de Cloudflare
+`psforgis-ocg`: la ruta `/ogc` añade CORS y caché a servicios públicos y la ruta
+opcional `/ia-plano` custodia la clave del proveedor de IA para la lectura
+asistida del asistente de planos (código de referencia en
+`docs/worker-ia-plano.js`, detalle en `docs/ia-plano.md`).
 
 ## Instalar / ejecutar
 
@@ -89,6 +91,15 @@ auto-verificaciones (✅/❌) del HTML generado; no publicar si alguna falla.
 | PDF.js | 3.11.174 | plano PDF (con `isEvalSupported:false`) | módulo plano |
 | UTIF | 3.1.0 | plano TIFF (carga diferida) | módulo plano |
 | Tesseract.js | 5.1.1 | OCR local del asistente «Importar predio desde plano» (carga diferida + SRI en el script principal; worker, core WASM y `eng.traineddata` los carga la propia librería desde jsDelivr, dentro de la CSP y en un Web Worker) | módulo importar-plano (degrada a transcripción manual) |
+
+### Opcional (no es una librería: es un servicio propio)
+
+| Pieza | Rol | Riesgo si falta |
+|---|---|---|
+| Worker `psforgis-ocg`, ruta `/ia-plano` | Lectura asistida por IA del recuadro del plano; custodia la clave del proveedor | Solo el botón «Leer con IA» (devuelve un error claro); el asistente sigue completo con OCR local, texto nativo de PDF, trazado y transcripción manual |
+
+Mientras el endpoint no esté desplegado el visor funciona igual: nada más
+depende de él. Para activarlo, ver `docs/ia-plano.md` § «Cómo activarlo».
 
 **Decisiones tomadas para minimizar cambios futuros:**
 

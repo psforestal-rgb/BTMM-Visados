@@ -95,9 +95,18 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   Este–Norte**, **derrotero de rumbo y distancia** o **azimut y distancia**. El
   plano pasa por la revisión local de seguridad; PDF.js lo convierte en imagen y
   el usuario elige página, rota, recorta y selecciona el recuadro a leer. El
-  **OCR es local y bajo demanda** (Tesseract.js en un Web Worker; sin servicios
-  externos de OCR) y siempre desemboca en una **tabla editable con confirmación
-  humana** (la escritura manuscrita se trata como transcripción asistida). Detecta
+  **OCR es local y bajo demanda** (Tesseract.js en un Web Worker) y **lee la
+  tabla por celdas**: reconstruye renglones y columnas a partir de las cajas de
+  las palabras, de modo que Este y Norte se toman de su columna y un número
+  intercalado no desplaza la fila; el recuadro se binariza con umbral **local**
+  (no global) para sobrevivir a fotocopias con sombra o gradiente. De forma
+  **opcional y bajo consentimiento explícito**, se puede pedir la lectura a un
+  **modelo de visión remoto** («Leer con IA»): sale del navegador únicamente el
+  recuadro marcado, la llamada pasa por el Worker propio —que es quien custodia
+  la clave, el visor sigue sin secretos— y la respuesta se valida y se marca en
+  la procedencia (ver `docs/ia-plano.md`). Cualquiera de los tres caminos
+  siempre desemboca en una **tabla editable con confirmación humana** (la
+  escritura manuscrita se trata como transcripción asistida). Detecta
   CRS solo con evidencia (CRTM05/EPSG:5367, Lambert Norte/Sur, UTM 16/17N o
   geográficas) y **exige confirmación explícita del usuario si es incierto** (no
   avanza hasta confirmarlo). Rechaza rumbos de cuadrante fuera de 0–90° (p. ej.
@@ -117,9 +126,10 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   resultado se incorpora vía `addUser()` y **el mismo plano se carga como capa de
   referencia para continuar con el ajuste del dibujo**, siguiendo el flujo normal
   de análisis e informe. El GeoJSON conserva la procedencia (archivo fuente, tipo
-  de extracción, CRS original, datos transcritos, área y cierre, método de
-  ubicación, traslación y rotación, confianza, verificación de forma e indicación
-  «geometría derivada de plano»).
+  de extracción, CRS original, **cómo se leyó el texto** (texto nativo del PDF,
+  OCR local, IA remota con el modelo usado, o transcripción manual), datos
+  transcritos, área y cierre, método de ubicación, traslación y rotación,
+  confianza, verificación de forma e indicación «geometría derivada de plano»).
 - Capa de referencias transparente (topónimos, límites y vías) con etiquetas
   priorizadas en un pane superior y líneas suavizadas para evitar solapes.
 - Exportación a documento **Word** (.docx) sobre el **membrete institucional
@@ -205,5 +215,8 @@ Fuentes de información por capa (información actualizada al **2026-06-25**):
 - **Bibliotecas:** Leaflet, Turf.js, proj4js, shpjs, sql.js, pako, JSZip,
   togeojson, PDF.js, UTIF y Tesseract.js (OCR local, carga diferida solo al abrir
   el asistente «Importar predio desde plano»).
+- **Lectura asistida por IA (opcional):** modelo de visión remoto invocado a
+  través del Worker propio `psforgis-ocg`, solo cuando la persona lo pide y solo
+  con el recuadro que marcó. Ver `docs/ia-plano.md`.
 
 SINAC — Área de Conservación Central — Bloque Tapantí Macizo de la Muerte.

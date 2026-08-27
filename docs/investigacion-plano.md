@@ -7,7 +7,14 @@ de este repositorio y mapeada al código existente.
 
 > Estado: documento de diseño. La **Fase 1 y la Fase 2 completa, más la parte no-ML
 > de la Fase 3**, ya están implementadas y publicadas (ver «Estado de implementación»
-> más abajo). Lo único pendiente son las apuestas mayores con modelos pesados.
+> más abajo).
+>
+> **Actualización (v54).** La Fase 3 se resolvió por una vía distinta a la
+> prevista: en vez de empaquetar PaddleOCR/ONNX en el navegador (~30 MB, se
+> mantiene descartado), se añadió un canal **opcional** de lectura con un modelo
+> de visión remoto, a través del Worker propio. Antes de eso se corrigieron cinco
+> defectos del canal local que explicaban la mayoría de los fallos y que no
+> tenían nada que ver con el motor de OCR. Ambas cosas en `docs/ia-plano.md`.
 
 ---
 
@@ -167,11 +174,15 @@ byte‑idénticos verificados en CI.
 | **C/D/G/H** decodificador | Lecturas alternativas de OCR + corrección que hace **cerrar** el polígono o realinear un **vértice atípico**; semáforo de confianza verde/ámbar/rojo con «una pregunta» | `numericVariants`, `suggestClosureFix`, `suggestCoordFix`, `confidence` | v50 |
 | **B/H** registro robusto | Ajuste de cuadrícula por mínimos cuadrados + **RANSAC** (rechaza puntos mal marcados) y **RMSE** en metros como calidad | `fitSimilarityRobust`, `similarityResiduals` | v51 |
 | **F** concordancia | Verificación de **forma** del polígono calculado contra el contorno dibujado (registro por similitud invariante a giro/escala/vértice inicial/reflexión) | `matchPolygons`, `resampleClosed` | v52 |
+| **C** OCR por celdas | Lista blanca por tipo, PSM 6 y reconstrucción de renglones/columnas desde las cajas de las palabras (Este y Norte salen de *su* columna); binarización **local** en vez de Otsu global y sobremuestreo a 2200 px | `ocrCharWhitelist`, `wordsToLines`, `detectColumns`, `rowsFromWords` | v54 |
+| **C** IA remota | Lectura **opcional** del recuadro por un modelo de visión, vía Worker propio; respuesta validada como contenido no confiable y registrada en la procedencia | `sanitizeAIRows` | v54 |
 
 **Pendiente (solo apuestas mayores de la Fase 3):** PaddleOCR/ONNX opt‑in
 (~30 MB, requiere red, **no** `file://`) y reconocedor CTC propio. Se mantienen
-**congelados** hasta medir, sobre un corpus real de planos costarricenses, una
-clase de planos que Tesseract + geometría no resuelva (criterio de arriba). El
+**congelados**: el canal de IA remota cubre la misma clase de planos difíciles
+sin costar ~30 MB de descarga ni un pipeline de entrenamiento propio, y para
+justificar el modelo local habría que medir antes, sobre un corpus real de
+planos costarricenses, qué queda sin resolver (criterio de arriba). El
 registro contra vector con **rotación del overlay** (F sobre el modo de plano ya
 existente en Leaflet) queda fuera por ahora: exige un overlay rotable y aporta
 poco frente a la verificación de forma ya disponible.
