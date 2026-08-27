@@ -156,6 +156,18 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   y muestra el resultado con opción de continuar o cancelar. No sustituye a un
   antivirus: la huella SHA-256 permite verificar el archivo en el antivirus
   corporativo o en virustotal.com sin subir el documento.
+- **Interfaz**: la identidad institucional (azul, dorado y verde) se mantiene sin
+  cambios; sobre ella se aplica una **escala de forma** común —radios,
+  elevaciones, filo de luz y curvas de movimiento— definida en `:root`. Las
+  superficies que flotan sobre el mapa (panel de resultados, asistente de plano,
+  avisos, guía de georreferenciación) son de **vidrio**: desenfocan el fondo para
+  ser legibles sobre cualquier ortofoto. La franja de pestañas señala con un
+  degradado que la fila continúa más allá del borde; los avisos aparecen al pie,
+  sin tapar la identificación institucional de la cabecera; el recuadro que se
+  marca para leer en el asistente **atenúa el resto del plano**, de modo que se
+  ve exactamente qué se va a procesar. Todo el movimiento se desactiva con
+  `prefers-reduced-motion`, el foco de teclado es visible en cada control y las
+  cifras usan numeración tabular para que las columnas queden alineadas.
 
 ## Estructura del repositorio
 
@@ -169,7 +181,7 @@ membrete_sinac.dotx Plantilla Word del membrete institucional SINAC-ACC (export 
 version.json        Versión publicada para forzar actualización del navegador
 favicon.ico         Icono del sitio
 logo.png            Logo institucional (512 px optimizado)
-MANTENIMIENTO.md    Guía operativa: probar, desplegar, actualizar dependencias, rollback
+MANTENIMIENTO.md    Guía operativa: probar, desplegar, sistema visual, dependencias, rollback
 SECURITY.md         Modelo de seguridad y cómo reportar vulnerabilidades
 README.md           Este archivo
 .gitignore

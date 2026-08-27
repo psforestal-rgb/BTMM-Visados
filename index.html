@@ -13,7 +13,19 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0a1830;--sb:#0c1f3d;--card:#13294d;--acc:#2f5fa0;--acc2:#4a7cc4;--gold:#d9b14a;--moss:#6f8f5e;--txt:#eef3fb;--txt2:#aebbd2;--warn:#e0a44b;--red:#e15b5b}
+:root{--bg:#0a1830;--sb:#0c1f3d;--card:#13294d;--acc:#2f5fa0;--acc2:#4a7cc4;--gold:#d9b14a;--moss:#6f8f5e;--txt:#eef3fb;--txt2:#aebbd2;--warn:#e0a44b;--red:#e15b5b;
+  /* Escala de forma (sin color): radios, elevación, filo de luz y curvas de
+     movimiento. Antes cada regla elegía su propio radio (3,4,5,6,7,8,9,11…) y
+     su propia sombra; unificarlos es lo que hace que el conjunto se lea como
+     un sistema y no como piezas sueltas. */
+  --r-xs:4px;--r-sm:7px;--r-md:10px;--r-lg:14px;--r-pill:999px;
+  --e-1:0 1px 2px rgba(0,0,0,.3);
+  --e-2:0 2px 6px rgba(0,0,0,.34),0 1px 2px rgba(0,0,0,.24);
+  --e-3:0 8px 24px rgba(0,0,0,.44),0 2px 6px rgba(0,0,0,.3);
+  --e-4:0 20px 54px rgba(0,0,0,.58),0 4px 12px rgba(0,0,0,.36);
+  --hl:inset 0 1px 0 rgba(255,255,255,.06);
+  --ease:cubic-bezier(.2,.7,.3,1);--ease-out:cubic-bezier(.16,1,.3,1);
+  --dur-1:.14s;--dur-2:.24s;--dur-3:.4s}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 
 /* ── HEADER ── */
@@ -310,6 +322,255 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
   #rp{left:8px;right:8px;width:auto;max-height:60vh}
   #minimap-grid{grid-template-columns:1fr}
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CAPA DE REFINAMIENTO VISUAL
+   ──────────────────────────────────────────────────────────────────────────
+   Ajusta únicamente FORMA: geometría (radios, espesores), profundidad
+   (sombras y filos de luz), tipografía (rasterizado, cifras tabulares),
+   movimiento (curvas y duraciones) y afordancias (foco, desbordamiento,
+   estados). **No cambia ni un solo color de la identidad institucional**: no
+   se introduce ningún matiz nuevo — solo se usan los tonos ya definidos y
+   blanco/negro con transparencia, que es lo que produce sombra y filo de luz.
+
+   Va al final de la hoja a propósito: así el refinamiento es una capa
+   legible y reversible sobre las reglas existentes, en lugar de una reescritura
+   dispersa por todo el archivo.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Fundamentos ───────────────────────────────────────────────────────────
+   El filo de luz (--hl) es el recurso que más eleva una interfaz oscura: una
+   línea blanca de 6 % en el borde superior simula que la luz cae desde arriba
+   y separa cada superficie de su fondo sin necesidad de subir el contraste. */
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+::selection{background:rgba(74,124,196,.42);color:var(--txt)}
+
+/* Barras de desplazamiento coherentes en todo el visor (antes cada contenedor
+   tenía las suyas o las del sistema). */
+*{scrollbar-width:thin;scrollbar-color:rgba(174,187,210,.34) transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:rgba(174,187,210,.28);border-radius:var(--r-pill);border:2px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:rgba(174,187,210,.5);background-clip:padding-box}
+*::-webkit-scrollbar-corner{background:transparent}
+
+/* Foco visible de dos anillos: el trazo marca el elemento y el halo lo separa
+   del fondo. Se mantiene el grosor y el color anteriores. */
+button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,
+textarea:focus-visible,a:focus-visible,[contenteditable]:focus-visible{
+  outline:2px solid var(--gold)!important;outline-offset:2px;
+  box-shadow:0 0 0 5px rgba(217,177,74,.16)!important}
+
+/* Cifras tabulares donde se comparan números en vertical: las columnas quedan
+   alineadas dígito con dígito, como en un instrumento de medición. */
+.td-num,.rtbl,#ci,#zi,.coo,.pi-table,.mm-title,.report-state{font-variant-numeric:tabular-nums}
+
+/* ── Cabecera ──────────────────────────────────────────────────────────────
+   El filete dorado inferior gana un reflejo (los mismos dorados del título) y
+   la cabecera proyecta sombra sobre el contenido: deja de ser una franja
+   pegada para pasar a ser un plano superior. */
+#header{position:relative;box-shadow:0 12px 32px -18px rgba(0,0,0,.9)}
+#header::after{content:'';position:absolute;left:0;right:0;bottom:-2px;height:2px;pointer-events:none;
+  background:linear-gradient(90deg,rgba(217,177,74,0) 0%,rgba(255,251,233,.9) 20%,rgba(217,177,74,.2) 50%,rgba(255,251,233,.9) 80%,rgba(217,177,74,0) 100%);
+  opacity:.5;mix-blend-mode:screen}
+#header h1{text-wrap:balance}
+#logo{transition:transform var(--dur-3) var(--ease-out),box-shadow var(--dur-3) var(--ease-out);
+  box-shadow:0 2px 9px rgba(0,0,0,.55),0 0 0 1px rgba(217,177,74,.28),inset 0 0 0 1px rgba(255,255,255,.05)}
+#logo:hover{transform:translateY(-1px) scale(1.02);
+  box-shadow:0 6px 18px rgba(0,0,0,.6),0 0 0 1px rgba(217,177,74,.5),0 0 22px rgba(217,177,74,.18)}
+
+/* ── Pestañas de módulo ────────────────────────────────────────────────────
+   El indicador activo pasa de un borde plano a una barra de extremos
+   redondeados que se despliega desde el centro; en reposo insinúa la mitad al
+   pasar el cursor. El difuminado en los extremos avisa de que la fila sigue
+   más allá del borde (antes no había ninguna pista de desbordamiento). */
+#tabs{-webkit-mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,1) 16px,rgba(0,0,0,1) calc(100% - 16px),transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,1) 16px,rgba(0,0,0,1) calc(100% - 16px),transparent 100%)}
+.tab{position:relative;border-bottom-color:transparent!important;
+  transition:color var(--dur-1) var(--ease),background-color var(--dur-1) var(--ease)}
+.tab::after{content:'';position:absolute;left:9px;right:9px;bottom:0;height:3px;
+  border-radius:var(--r-pill) var(--r-pill) 0 0;background:var(--gold);
+  transform:scaleX(0);transform-origin:50% 100%;
+  transition:transform var(--dur-2) var(--ease-out),opacity var(--dur-2) var(--ease)}
+.tab:not(.active):hover::after{transform:scaleX(.42);opacity:.45}
+.tab.active::after{transform:scaleX(1);opacity:1;box-shadow:0 0 12px rgba(217,177,74,.45)}
+.tab .tb{display:inline-block;transition:transform var(--dur-2) var(--ease-out)}
+.tab:hover .tb{transform:translateY(-1px)}
+.tab .soon{border:1px solid rgba(255,255,255,.09);border-radius:var(--r-pill)}
+/* La franja de pestañas recorta en vertical (tiene overflow-x), así que un
+   anillo de foco por fuera se vería cortado: aquí va por dentro. */
+.tab{border-radius:var(--r-sm) var(--r-sm) 0 0}
+.tab:focus-visible{outline-offset:-3px!important;box-shadow:none!important}
+
+/* ── Barra lateral ─────────────────────────────────────────────────────────
+   Las tarjetas se separan del fondo con radio mayor, sombra y filo de luz. El
+   rótulo de cada tarjeta se prolonga en una regla que se desvanece: ordena la
+   lectura vertical sin añadir ni una palabra. */
+.pnl{border-radius:var(--r-md);box-shadow:var(--e-2),var(--hl);
+  transition:border-color var(--dur-2) var(--ease),box-shadow var(--dur-2) var(--ease)}
+.pnl:hover{border-color:var(--acc);box-shadow:var(--e-3),var(--hl)}
+.pt{display:flex;align-items:center;gap:9px}
+.pt::after{content:'';flex:1 1 auto;min-width:14px;height:1px;border-radius:1px;
+  background:linear-gradient(90deg,rgba(217,177,74,.42) 0%,rgba(217,177,74,.08) 55%,rgba(217,177,74,0) 100%)}
+.global-ref-summary .pt{flex:1 1 auto;min-width:0}
+.global-ref-summary{transition:background-color var(--dur-1) var(--ease)}
+.global-ref-summary:hover{background:rgba(255,255,255,.03)}
+.global-ref-summary:after{transition:transform var(--dur-2) var(--ease-out)}
+#global-ref-card,#predio-zoom-card{border-radius:var(--r-md)}
+
+/* Fila de capa: barra de acento a la izquierda y desplazamiento mínimo al
+   pasar el cursor — señala el objetivo del clic en una lista densa. */
+.ltog{border-radius:var(--r-sm);position:relative;
+  transition:background-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
+.ltog:hover{transform:translateX(2px);box-shadow:inset 3px 0 0 rgba(217,177,74,.55)}
+.ltog input,.report-item input{transition:transform var(--dur-1) var(--ease)}
+.ltog:hover input{transform:scale(1.06)}
+.lbadge{border:1px solid rgba(255,255,255,.08);letter-spacing:.3px}
+
+/* ── Botones ───────────────────────────────────────────────────────────────
+   Elevación al pasar el cursor y hundimiento al pulsar: el botón responde como
+   una superficie física. El barrido de luz del botón dorado retoma el mismo
+   lenguaje del brillo del título de la cabecera. */
+.btn{border-radius:var(--r-sm);
+  transition:background var(--dur-2) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease),filter var(--dur-2) var(--ease)}
+.btn:not(:disabled):hover{transform:translateY(-1px)}
+.btn:not(:disabled):active{transform:translateY(0)}
+.bp{position:relative;overflow:hidden}
+.bp::after{content:'';position:absolute;top:0;bottom:0;left:0;width:42%;pointer-events:none;
+  background:linear-gradient(105deg,rgba(255,255,255,0),rgba(255,255,255,.42) 50%,rgba(255,255,255,0));
+  transform:translateX(-170%);transition:transform .75s var(--ease-out)}
+.bp:not(:disabled):hover::after{transform:translateX(375%)}
+.bp:not(:disabled):hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 4px 12px rgba(0,0,0,.45)}
+.bs,.bd{box-shadow:var(--hl)}
+.bs:hover,.bd:hover{box-shadow:var(--hl),var(--e-2)}
+.btn-video-tut,#splash-video{border-radius:var(--r-sm);
+  transition:background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease)}
+.btn-video-tut:hover,#splash-video:hover{transform:translateY(-1px);border-color:var(--acc)}
+
+/* ── Zona de arrastre ──────────────────────────────────────────────────────
+   Al arrastrar un archivo encima, el recuadro late: confirma que la zona está
+   activa sin depender solo del cambio de borde. */
+#dz{border-radius:var(--r-md);transition:border-color var(--dur-2) var(--ease),background-color var(--dur-2) var(--ease),box-shadow var(--dur-2) var(--ease),transform var(--dur-2) var(--ease)}
+#dz:hover{transform:translateY(-1px);box-shadow:var(--e-2)}
+#dz .di{display:inline-block;transition:transform var(--dur-3) var(--ease-out)}
+#dz:hover .di{transform:translateY(-2px) scale(1.08)}
+#dz.drag-over{animation:dzLatido 1.15s ease-in-out infinite}
+@keyframes dzLatido{
+  0%,100%{box-shadow:0 0 0 0 rgba(74,124,196,.34)}
+  50%{box-shadow:0 0 0 7px rgba(74,124,196,0)}}
+
+/* Campos de texto de la barra lateral (llevan estilo en línea: el radio y el
+   foco necesitan ganarle en especificidad). */
+#informe-num,#plano-num{border-radius:var(--r-sm)!important;
+  transition:border-color var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
+#informe-num:focus,#plano-num:focus{border-color:var(--acc2)!important}
+
+/* ── Selector de modo de plano y listas de tarjetas ───────────────────────── */
+.pdf-mode-option{border-radius:var(--r-sm);box-shadow:var(--hl);
+  transition:background-color var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease)}
+.pdf-mode-option:hover{transform:translateY(-1px);box-shadow:var(--hl),var(--e-2)}
+.pdf-mode-option.active{box-shadow:0 0 0 1px rgba(217,177,74,.24) inset,var(--e-2)}
+.pdf-mode-icon{transition:transform var(--dur-2) var(--ease-out)}
+.pdf-mode-option:hover .pdf-mode-icon{transform:scale(1.1)}
+.pdf-mode-panel,.pdf-mode-placeholder,.pdf-tools,.pdf-tools .stat,.pdf-pair{border-radius:var(--r-sm)}
+.pdf-tools{box-shadow:var(--hl)}
+.report-item{border-radius:var(--r-sm);
+  transition:background-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
+.report-item:hover{transform:translateX(2px);box-shadow:inset 3px 0 0 rgba(217,177,74,.45)}
+.report-state.ready{position:relative}
+.ph-item{border-radius:var(--r-sm);transition:transform var(--dur-1) var(--ease),border-left-color var(--dur-2) var(--ease)}
+.ph-item:hover{transform:translateX(2px);border-left-color:var(--acc2)}
+.ph-badge{border-radius:var(--r-pill)}
+.ph-icon{animation:phFlotar 5.5s ease-in-out infinite}
+@keyframes phFlotar{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+
+/* ── Panel de resultados ───────────────────────────────────────────────────
+   Superficie de vidrio: el desenfoque del fondo lo despega del mapa y hace
+   legible el contenido sobre cualquier ortofoto. La barra de título muestra un
+   asidero de arrastre (tres surcos) que antes solo se adivinaba por el cursor. */
+#rp{border-radius:var(--r-lg);box-shadow:var(--e-4);
+  -webkit-backdrop-filter:blur(16px) saturate(1.12);backdrop-filter:blur(16px) saturate(1.12);
+  border-color:rgba(47,95,160,.85)}
+#rh{position:relative;box-shadow:var(--hl)}
+#rh::before{content:'';position:absolute;left:50%;top:5px;width:34px;height:3px;margin-left:-17px;
+  border-radius:var(--r-pill);opacity:.34;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.9) 0 3px,rgba(255,255,255,0) 3px 6px)}
+#rc button{transition:background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease)}
+#rc button:not(:disabled):hover{transform:translateY(-1px)}
+#rb{scrollbar-gutter:stable}
+.rtab{border-radius:var(--r-pill);box-shadow:var(--hl);
+  transition:background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease)}
+.rtab:hover{transform:translateY(-1px);box-shadow:var(--hl),var(--e-2)}
+.rtab.active{box-shadow:var(--hl),0 3px 10px rgba(0,0,0,.4)}
+#rp-reopen{border-radius:var(--r-pill);transition:transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease)}
+#rp-reopen:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.6)}
+.mm-div{border-radius:var(--r-sm);box-shadow:var(--e-1)}
+
+/* Tabla de resultados: encabezado que permanece a la vista al desplazar (el
+   borde se dibuja con sombra interior porque las celdas van colapsadas) y
+   realce de la fila bajo el cursor con un tono ya presente en la propia tabla. */
+.rtbl th{position:sticky;top:0;z-index:2;box-shadow:inset 0 0 0 1px #9eb09e}
+.rtbl tbody tr:not(.td-total):hover td:not(.td-layer){background:#e6eef8}
+.rtbl td,.rtbl th{transition:background-color var(--dur-1) var(--ease)}
+.bar-wrap{border-radius:var(--r-pill);box-shadow:inset 0 1px 2px rgba(0,0,0,.45)}
+.bar-fill{border-radius:var(--r-pill);box-shadow:inset 0 1px 0 rgba(255,255,255,.28)}
+
+/* ── Avisos, progreso y barra de estado ────────────────────────────────────
+   El aviso pasa de la cabecera al pie. Antes salía a 55 px del borde superior y
+   tapaba la identificación institucional —el nombre del autor y el contacto—
+   justo mientras se cargaban las capas. Anclarlo abajo lo resuelve a cualquier
+   ancho: la cabecera crece al envolver el texto en pantallas estrechas, así que
+   ninguna distancia fija desde arriba servía para todos los tamaños. Queda
+   sobre el mapa, centrado y por encima de la barra de estado. */
+#toast{top:auto;bottom:52px;border-radius:var(--r-pill);box-shadow:var(--e-3);
+  max-width:min(560px,calc(100vw - 28px));text-align:center;line-height:1.4;
+  -webkit-backdrop-filter:blur(12px) saturate(1.1);backdrop-filter:blur(12px) saturate(1.1);
+  animation:toastEntra .32s var(--ease-out)}
+@keyframes toastEntra{from{opacity:0;transform:translateX(-50%) translateY(12px) scale(.97)}
+  to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+#po{-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.pb{border-radius:var(--r-lg);box-shadow:var(--e-4),var(--hl)}
+.pbw{border-radius:var(--r-pill);box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+.pbi{border-radius:var(--r-pill);position:relative;overflow:hidden}
+.pbi::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.32) 50%,rgba(255,255,255,0) 100%);
+  background-size:180% 100%;animation:pbBrillo 1.4s linear infinite}
+@keyframes pbBrillo{from{background-position:180% 0}to{background-position:-80% 0}}
+#stb{box-shadow:var(--hl)}
+#ci{border-radius:var(--r-sm);box-shadow:inset 0 1px 2px rgba(0,0,0,.35)}
+#pdf-map-guide{border-radius:var(--r-sm);box-shadow:var(--e-3);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+
+/* ── Ventana de ingreso ────────────────────────────────────────────────────
+   La tarjeta entra con una elevación breve en lugar de aparecer de golpe. */
+#splash-card{box-shadow:var(--e-4),var(--hl);animation:splashEntra .55s var(--ease-out) both}
+@keyframes splashEntra{from{opacity:0;transform:translateY(14px) scale(.985)}
+  to{opacity:1;transform:translateY(0) scale(1)}}
+.splash-field input{transition:border-color var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
+#splash-enter{border-radius:var(--r-md);position:relative;overflow:hidden}
+#splash-enter::after{content:'';position:absolute;top:0;bottom:0;left:0;width:42%;pointer-events:none;
+  background:linear-gradient(105deg,rgba(255,255,255,0),rgba(255,255,255,.45) 50%,rgba(255,255,255,0));
+  transform:translateX(-170%);transition:transform .75s var(--ease-out)}
+#splash-enter:not(:disabled):hover::after{transform:translateX(375%)}
+#splash-enter:not(:disabled):hover{transform:translateY(-1px)}
+
+/* ── Respeto por «reducir movimiento» ──────────────────────────────────────
+   Todo lo que se anima arriba se detiene aquí; nada de lo que comunica estado
+   depende únicamente del movimiento. */
+@media (prefers-reduced-motion:reduce){
+  #dz.drag-over,.ph-icon,.pbi::after,#splash-card,#toast{animation:none}
+  .btn:not(:disabled):hover,.ltog:hover,.report-item:hover,.ph-item:hover,
+  .pdf-mode-option:hover,.rtab:hover,#rp-reopen:hover,#dz:hover,#logo:hover,
+  .btn-video-tut:hover,#splash-video:hover,#splash-enter:not(:disabled):hover{transform:none}
+  .tab::after{transition:none}
+}
+
+@media (max-width:900px){
+  /* La barra de estado es más alta en pantalla estrecha (58 px): el aviso sube
+     lo justo para no montarse encima. */
+  #toast{bottom:74px}
+}
+
 </style>
 </head>
 <body>
@@ -753,7 +1014,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-27-ia-plano-v54';
+const APP_VERSION='2026-08-27-refino-visual-v55';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -7071,7 +7332,57 @@ function piInjectStyle(){
    '.pi-tool{background:#12294d;border:1px solid #2c4a7c;color:#dfe9f7;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:12px}',
    '#pi-map{height:340px;border:1px solid #24406e;border-radius:6px;margin-top:8px}',
    '.pi-prog{height:6px;background:#0c1f3d;border-radius:4px;overflow:hidden;flex:1;max-width:220px}',
-   '.pi-prog i{display:block;height:100%;width:0;background:#4a7cc4;transition:width .2s}'
+   '.pi-prog i{display:block;height:100%;width:0;background:#4a7cc4;transition:width .2s}',
+
+   /* ── Capa de refinamiento visual del asistente ──────────────────────────
+      Mismo criterio que la hoja principal: solo forma, profundidad, tipografía
+      y movimiento; ni un color nuevo. El asistente pasa de ser una capa que
+      cubre la pantalla a una LÁMINA que flota sobre el visor — que es lo que
+      realmente es: una mesa de trabajo temporal sobre el mapa. */
+   '#pi-wiz{-webkit-backdrop-filter:blur(7px) saturate(.92);backdrop-filter:blur(7px) saturate(.92);padding:14px}',
+   '.pi-shell{height:calc(100% - 28px);max-height:calc(100vh - 28px);border-radius:var(--r-lg);overflow:hidden;border:1px solid #24406e;box-shadow:var(--e-4)}',
+   '@media(max-width:900px){#pi-wiz{padding:0}.pi-shell{height:100%;max-height:100vh;border-radius:0;border-left:none;border-right:none}}',
+   '.pi-head{box-shadow:var(--hl);position:relative}',
+   /* Reflejo sobre el filete inferior, igual que en la cabecera del visor. */
+   '.pi-head::after{content:\'\';position:absolute;left:0;right:0;bottom:-1px;height:1px;pointer-events:none;opacity:.45;mix-blend-mode:screen;background:linear-gradient(90deg,rgba(217,177,74,0),rgba(255,251,233,.75) 30%,rgba(217,177,74,.18) 50%,rgba(255,251,233,.75) 70%,rgba(217,177,74,0))}',
+   /* Riel de pasos: los ya recorridos llevan una marca, el actual un halo. Así
+      el avance se lee de un vistazo sin contar los números. */
+   '.pi-steps span{border-radius:var(--r-pill);transition:background-color var(--dur-2) var(--ease),color var(--dur-2) var(--ease),border-color var(--dur-2) var(--ease),box-shadow var(--dur-2) var(--ease)}',
+   '.pi-steps span.on{box-shadow:0 0 0 3px rgba(74,124,196,.24),var(--e-1)}',
+   '.pi-steps span.done::before{content:\'\\2713\';margin-right:4px;font-weight:700}',
+   '.pi-x{border-radius:var(--r-sm);box-shadow:var(--hl);transition:background-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease)}',
+   '.pi-x:hover{transform:translateY(-1px);border-color:#4a7cc4}',
+   '.pi-body{scrollbar-gutter:stable}',
+   /* El pie se separa del contenido con una sombra ascendente: indica que la
+      lista de arriba sigue desplazándose por debajo. */
+   '.pi-foot{box-shadow:0 -10px 24px -18px rgba(0,0,0,.95),var(--hl)}',
+   '.pi-btn{border-radius:var(--r-sm);box-shadow:var(--hl);transition:background-color var(--dur-2) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease),filter var(--dur-2) var(--ease)}',
+   '.pi-btn:not(:disabled):hover{transform:translateY(-1px);box-shadow:var(--hl),var(--e-2);filter:brightness(1.08)}',
+   '.pi-btn:not(:disabled):active{transform:translateY(0)}',
+   '.pi-tool{border-radius:var(--r-sm);box-shadow:var(--hl);transition:background-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),filter var(--dur-1) var(--ease)}',
+   '.pi-tool:not(:disabled):hover{transform:translateY(-1px);filter:brightness(1.12)}',
+   /* Los avisos ganan una banda de acento a la izquierda: se distingue de un
+      vistazo un dato correcto de una advertencia sin leer el texto entero. */
+   '.pi-note{border-radius:var(--r-sm);border-left-width:3px;box-shadow:var(--hl)}',
+   '.pi-canvas-wrap{border-radius:var(--r-sm);overflow:hidden;box-shadow:var(--e-2)}',
+   '.pi-sel{border-radius:3px;box-shadow:0 0 0 9999px rgba(4,10,24,.34)}',
+   '.pi-in{border-radius:var(--r-sm);transition:border-color var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}',
+   '.pi-in:focus{border-color:#4a7cc4}',
+   '.pi-chip{border-radius:var(--r-pill);box-shadow:var(--hl)}',
+   /* Tabla de transcripción: cifras tabulares (columnas alineadas dígito con
+      dígito), realce de la fila bajo el cursor y anillo de foco en la celda que
+      se está editando — es la pantalla donde más se teclea del asistente. */
+   '.pi-table{font-variant-numeric:tabular-nums}',
+   '.pi-table th{box-shadow:inset 0 0 0 1px #24406e;z-index:2}',
+   '.pi-table tbody tr:hover td{filter:brightness(1.14)}',
+   '.pi-table td[contenteditable]{border-radius:2px;transition:box-shadow var(--dur-1) var(--ease)}',
+   '.pi-table td[contenteditable]:focus-visible{outline:2px solid #4a7cc4!important;outline-offset:-2px;box-shadow:none!important}',
+   '.pi-prog{border-radius:var(--r-pill);box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}',
+   '.pi-prog i{border-radius:var(--r-pill);position:relative;overflow:hidden}',
+   '.pi-prog i::after{content:\'\';position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.34) 50%,rgba(255,255,255,0));background-size:180% 100%;animation:piBrillo 1.4s linear infinite}',
+   '@keyframes piBrillo{from{background-position:180% 0}to{background-position:-80% 0}}',
+   '#pi-map{border-radius:var(--r-sm);box-shadow:var(--e-2)}',
+   '@media(prefers-reduced-motion:reduce){.pi-prog i::after{animation:none}.pi-btn:not(:disabled):hover,.pi-tool:not(:disabled):hover,.pi-x:hover{transform:none}}'
   ].join('\n');
   document.head.appendChild(st);
 }

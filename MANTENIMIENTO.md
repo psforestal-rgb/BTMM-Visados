@@ -68,6 +68,36 @@ git push origin main
 Al ser un sitio estático sin estado, revertir el commit ES el rollback
 completo. Subir versión en `version.json` para forzar la recarga de clientes.
 
+## Sistema visual (al tocar CSS)
+
+La hoja de estilos termina con una sección marcada **«CAPA DE REFINAMIENTO
+VISUAL»**. Es deliberada: el refinamiento vive en un bloque legible y reversible
+en lugar de repartido por todo el archivo. Junto a ella, `:root` define una
+**escala de forma** que no contiene ningún color:
+
+| Grupo | Tokens | Para qué |
+|---|---|---|
+| Radios | `--r-xs` 4px · `--r-sm` 7px · `--r-md` 10px · `--r-lg` 14px · `--r-pill` | Antes cada regla elegía el suyo (3,4,5,6,7,8,9,11,12,16,18 px); un conjunto acotado es lo que hace que las piezas se lean como un sistema. |
+| Elevación | `--e-1` … `--e-4` | Cuatro alturas: apoyado, tarjeta, flotante, modal. |
+| Filo de luz | `--hl` | Línea blanca al 6 % en el borde superior. Es el recurso que más eleva una interfaz oscura: simula luz cenital y separa superficies sin subir el contraste. |
+| Movimiento | `--ease`, `--ease-out`, `--dur-1/2/3` | Curvas y duraciones únicas para todas las transiciones. |
+
+**Dos reglas al editar:**
+
+1. **No se cambian los colores.** La paleta institucional (`--bg`, `--sb`,
+   `--card`, `--acc`, `--acc2`, `--gold`, `--moss`, `--txt`, `--txt2`, `--warn`,
+   `--red`) es identidad, no decoración. Para profundidad se usan blanco y negro
+   con transparencia —que es lo que produce sombra y filo de luz—, y para
+   transparencias de un tono se reexpresa en `rgba()` un hex que ya exista. La
+   autoverificación «Paleta institucional intacta» de `gen_v3.py` lo vigila.
+2. **Cualquier animación nueva se apaga** en el bloque
+   `@media (prefers-reduced-motion:reduce)`, y nada que comunique estado puede
+   depender solo del movimiento.
+
+El asistente «Importar predio desde plano» tiene su propia hoja (inyectada por
+`piInjectStyle()`), con su capa de refinamiento equivalente al final; consume los
+mismos tokens de `:root`.
+
 ## Regenerar index.html
 
 `gen_v3.py` requiere `layers_b64.json` y `membrete_sinac.dotx` (el primero
