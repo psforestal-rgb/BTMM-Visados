@@ -82,6 +82,28 @@ en lugar de repartido por todo el archivo. Junto a ella, `:root` define una
 | Filo de luz | `--hl` | Línea blanca al 6 % en el borde superior. Es el recurso que más eleva una interfaz oscura: simula luz cenital y separa superficies sin subir el contraste. |
 | Movimiento | `--ease`, `--ease-out`, `--dur-1/2/3` | Curvas y duraciones únicas para todas las transiciones. |
 
+### Móvil (por debajo de 900 px)
+
+Al final de la hoja hay una segunda sección marcada, **«CAPA MÓVIL»**, escrita
+sobre mediciones reales en 390×844 y 360×740, no a ojo. Lo que resuelve:
+
+| Problema medido | Solución |
+|---|---|
+| Al mapa le quedaban **183 px** de alto en un teléfono de 740: la barra lateral y el mapa se repartían el espacio bajo una cabecera, unas pestañas y una barra de estado fijas. | **Hoja deslizable**: el mapa ocupa toda la zona útil y el panel del módulo flota encima con tres alturas (reducida 46 px, media 55 %, completa). El mapa pasa a **533 px**. Lógica en `hojaInit()` y siguientes; solo se monta por debajo de 900 px y se desmonta sola al ensanchar. |
+| Casi ningún control llegaba a los **44 px** recomendados (WCAG 2.5.5): las casillas medían 17×17 y el deslizador de opacidad 16 px de alto. | Alturas mínimas en pestañas, filas de capa, botones, píldoras y celdas. Las casillas van dentro de su `<label>`, así que el objetivo real es la fila entera. |
+| Los campos usaban 13 px y **iOS amplía la página** al enfocar un campo de menos de 16 px. | 16 px en todos los campos dentro de la consulta móvil. |
+| El riel de pasos del asistente se apilaba en diez filas: **241 px de 740**, un tercio de la pantalla. | Una sola fila desplazable con difuminado al final: **103 px**. |
+| `100vh` no descuenta la barra del navegador móvil y tapaba la barra de estado. | `100dvh` (la regla de `100vh` queda como respaldo) y `env(safe-area-inset-bottom)` para pantallas con muesca. |
+| El resaltado de «cursor encima» se quedaba pegado tras tocar. | `@media (hover:none)` anula los desplazamientos, conservando los cambios de color. |
+
+**Al tocar la hoja deslizable:** el estado vive en `HOJA` y se aplica con
+`hojaAplica('min'|'media'|'max')`. El toque y el arrastre se resuelven **ambos
+en `hojaArrastre`**, porque el `preventDefault()` del `touchstart` —necesario
+para que la página no se desplace al arrastrar— cancela también el `click`
+sintético; el `click` solo queda para el teclado (`ev.detail===0`). La hoja
+publica su altura en la variable CSS `--hoja-aviso` para que el aviso se
+coloque justo encima.
+
 **Dos reglas al editar:**
 
 1. **No se cambian los colores.** La paleta institucional (`--bg`, `--sb`,

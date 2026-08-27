@@ -168,6 +168,14 @@ actualizar el valor `version` en `version.json` y el `APP_VERSION` embebido en
   ve exactamente qué se va a procesar. Todo el movimiento se desactiva con
   `prefers-reduced-motion`, el foco de teclado es visible en cada control y las
   cifras usan numeración tabular para que las columnas queden alineadas.
+- **En teléfono** el panel del módulo se convierte en una **hoja deslizable**
+  sobre el mapa, con tres alturas (reducida, media y completa) que se cambian
+  tocando o arrastrando el tirador: el mapa deja de tener 183 px de alto y pasa
+  a ocupar toda la pantalla, sin que se oculte ningún control. Los objetivos
+  táctiles llegan a 44 px, los campos usan 16 px (por debajo de eso iOS amplía
+  la página al enfocar), las celdas de coordenadas abren el **teclado numérico**,
+  el riel de pasos del asistente va en una sola fila desplazable y se respetan
+  la altura dinámica del navegador y la zona segura de las pantallas con muesca.
 
 ## Estructura del repositorio
 

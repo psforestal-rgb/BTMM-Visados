@@ -571,6 +571,128 @@ textarea:focus-visible,a:focus-visible,[contenteditable]:focus-visible{
   #toast{bottom:74px}
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CAPA MÓVIL
+   ──────────────────────────────────────────────────────────────────────────
+   Medido sobre teléfonos reales (390×844 y 360×740) antes de escribir nada.
+   Los problemas encontrados y lo que resuelve cada bloque:
+
+     · Al mapa le quedaban 183 px de alto en un teléfono de 740 px, porque la
+       barra lateral y el mapa se repartían el espacio en vertical bajo una
+       cabecera, unas pestañas y una barra de estado fijas → HOJA DESLIZABLE.
+     · Casi ningún control llegaba a los 44 px recomendados: las casillas medían
+       17×17 px y el deslizador de opacidad 16 px de alto → OBJETIVOS TÁCTILES.
+     · Los campos de texto usaban 13 px, y iOS amplía la página al enfocar un
+       campo de menos de 16 px → TIPOGRAFÍA DE FORMULARIO.
+     · El riel de pasos del asistente se apilaba en diez filas y ocupaba 241 px
+       de los 740 (un tercio de la pantalla) → RIEL EN UNA SOLA LÍNEA.
+     · `100vh` no descuenta la barra del navegador móvil, así que la barra de
+       estado quedaba tapada → ALTURA DINÁMICA.
+     · El resaltado de «cursor encima» se queda pegado tras tocar en una
+       pantalla táctil → SIN ESTADOS DE CURSOR EN TÁCTIL.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Altura dinámica: descuenta la barra del navegador cuando se muestra u oculta.
+   Se declara después de la regla de 100vh, que queda como respaldo. */
+body{height:100dvh}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+
+/* En una pantalla táctil no hay cursor: el realce de «encima» se quedaría
+   pegado después de tocar. Se conservan los cambios de color, se quita el
+   desplazamiento. */
+@media (hover:none){
+  .btn:not(:disabled):hover,.ltog:hover,.report-item:hover,.ph-item:hover,
+  .pdf-mode-option:hover,.rtab:hover,#rp-reopen:hover,#dz:hover,#logo:hover,
+  .btn-video-tut:hover,#splash-video:hover,#rc button:not(:disabled):hover,
+  .tab:hover .tb{transform:none}
+  .bp:not(:disabled):hover::after{transform:translateX(-170%)}
+}
+
+@media (max-width:900px){
+  /* ── La hoja ────────────────────────────────────────────────────────────
+     El mapa pasa a ocupar toda la zona útil y el panel del módulo flota encima
+     con tres alturas. Nada se oculta: el contenido del panel es el mismo y se
+     desplaza dentro de la hoja. */
+  #main{position:relative}
+  #map{position:absolute;inset:0;width:100%;height:100%;min-height:0}
+  #sidebar{position:absolute;left:0;right:0;bottom:0;top:auto;z-index:900;
+    width:100%;max-width:none;max-height:100%;
+    border:none;border-top:1px solid rgba(217,177,74,.35);
+    border-radius:var(--r-lg) var(--r-lg) 0 0;
+    box-shadow:0 -18px 44px rgba(0,0,0,.55),var(--hl);
+    -webkit-backdrop-filter:blur(14px) saturate(1.1);backdrop-filter:blur(14px) saturate(1.1);
+    transition:height var(--dur-3) var(--ease-out)}
+  #sidebar.hoja-arrastrando{transition:none}
+  #sidebar.hoja-min{height:46px}
+  #sidebar.hoja-media{height:55%}
+  #sidebar.hoja-max{height:100%}
+  /* En la altura reducida solo se ve el tirador. */
+  #sidebar.hoja-min>*:not(.hoja-tirador){display:none}
+
+  .hoja-tirador{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:3px;width:100%;min-height:46px;padding:7px 10px 5px;
+    background:none;border:none;color:var(--txt2);font-family:inherit;cursor:grab;
+    touch-action:none;-webkit-user-select:none;user-select:none}
+  .hoja-tirador:active{cursor:grabbing}
+  .hoja-pastilla{width:44px;height:5px;border-radius:var(--r-pill);
+    background:rgba(174,187,210,.5);transition:background-color var(--dur-2) var(--ease),width var(--dur-2) var(--ease)}
+  .hoja-tirador:active .hoja-pastilla{background:var(--gold);width:56px}
+  .hoja-txt{font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;line-height:1.2}
+  .hoja-min .hoja-txt::after{content:'Panel del módulo — toque para abrir'}
+  .hoja-media .hoja-txt::after{content:'Toque para ampliar · arrastre para ajustar'}
+  .hoja-max .hoja-txt::after{content:'Toque para reducir y ver el mapa'}
+
+  /* ── Objetivos táctiles ────────────────────────────────────────────────
+     44 px es el mínimo recomendado (WCAG 2.5.5 e Interfaz Humana de iOS). */
+  .tab{min-height:48px;padding:12px 15px;font-size:13.5px}
+  .ltog{min-height:46px;padding:8px 6px;gap:10px}
+  .ltog input,.report-item input{width:23px;height:23px;flex:0 0 23px}
+  .btn{min-height:46px;font-size:13.5px}
+  .btn-video-tut,#splash-video{min-height:44px;padding:11px 13px;font-size:12.5px}
+  .global-ref-summary{min-height:48px}
+  .report-item{padding:11px 9px;font-size:12.5px}
+  .pdf-mode-option{min-height:64px;padding:11px}
+  .pdf-pair button{min-height:38px;padding:8px 11px}
+  .rtab{min-height:40px;padding:8px 13px}
+  .rtab-x{width:26px;height:26px;font-size:16px}
+  #rc button{width:40px;height:38px;font-size:17px}
+  #rc .rh-btn{min-height:38px;padding:6px 12px}
+  /* Deslizador de opacidad: la pista es fina, pero la zona sensible al dedo no
+     tiene por qué serlo. */
+  input[type=range]{height:44px;padding:0}
+  input[type=range]::-webkit-slider-thumb{width:24px;height:24px}
+  input[type=range]::-moz-range-thumb{width:24px;height:24px}
+
+  /* ── Tipografía de formulario ───────────────────────────────────────────
+     Por debajo de 16 px, iOS amplía la página al enfocar el campo y deja al
+     usuario desplazado y desorientado. */
+  #informe-num,#plano-num,.splash-field input,.pi-in{font-size:16px!important}
+  #informe-num,#plano-num{min-height:46px}
+
+  /* ── Zona segura (pantallas con muesca o barra de gestos) ───────────────── */
+  #stb{padding-bottom:calc(5px + env(safe-area-inset-bottom));
+    min-height:calc(58px + env(safe-area-inset-bottom))}
+  #sidebar{padding-bottom:env(safe-area-inset-bottom)}
+  /* Justo encima de la hoja, sea cual sea su altura (la publica en
+     --hoja-aviso); si aún no está montada, sobre la barra de estado. */
+  #toast{bottom:calc(var(--hoja-aviso,74px) + env(safe-area-inset-bottom))}
+
+  /* ── Cabecera y barra de estado, algo más compactas ─────────────────────
+     Se conserva TODO el texto; solo se aprieta el interlineado para devolver
+     espacio al mapa. */
+  #header{padding:6px 10px 7px}
+  #header h1{font-size:15.5px;line-height:1.15}
+  #header .sub{font-size:10px;line-height:1.28}
+  #ci{font-size:13px}
+
+  /* La zona de arrastre no aporta en un teléfono (no hay dónde arrastrar
+     desde), pero sigue siendo el botón de carga: se compacta sin quitar texto. */
+  #dz{padding:12px 10px}
+  #dz .di{font-size:24px}
+}
+
+
 </style>
 </head>
 <body>
@@ -1014,7 +1136,7 @@ textarea:focus-visible,a:focus-visible,[contenteditable]:focus-visible{
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-27-refino-visual-v55';
+const APP_VERSION='2026-08-27-movil-v56';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -7341,7 +7463,34 @@ function piInjectStyle(){
       realmente es: una mesa de trabajo temporal sobre el mapa. */
    '#pi-wiz{-webkit-backdrop-filter:blur(7px) saturate(.92);backdrop-filter:blur(7px) saturate(.92);padding:14px}',
    '.pi-shell{height:calc(100% - 28px);max-height:calc(100vh - 28px);border-radius:var(--r-lg);overflow:hidden;border:1px solid #24406e;box-shadow:var(--e-4)}',
-   '@media(max-width:900px){#pi-wiz{padding:0}.pi-shell{height:100%;max-height:100vh;border-radius:0;border-left:none;border-right:none}}',
+   /* ── Móvil ──────────────────────────────────────────────────────────────
+      Medido en 390x844 y 360x740. La cabecera del asistente ocupaba 241 px de
+      740 —un tercio de la pantalla— porque los diez pasos se apilaban en
+      columna. Ahora el título y «Cancelar» comparten línea y el riel va en una
+      sola fila desplazable. Las celdas de la tabla crecen porque es la pantalla
+      donde más se teclea del asistente. */
+   '@media(max-width:900px){',
+   '  #pi-wiz{padding:0}',
+   '  .pi-shell{height:100%;max-height:100dvh;border-radius:0;border-left:none;border-right:none}',
+   '  .pi-head{flex-wrap:wrap;padding:10px 12px;gap:8px}',
+   '  .pi-head b{flex:1 1 auto;font-size:14px}',
+   '  .pi-x{order:2;flex:0 0 auto;min-height:44px}',
+   '  .pi-steps{order:3;flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;gap:5px;padding-bottom:2px;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,rgba(0,0,0,1) calc(100% - 22px),transparent 100%);mask-image:linear-gradient(90deg,rgba(0,0,0,1) calc(100% - 22px),transparent 100%)}',
+   '  .pi-steps::-webkit-scrollbar{display:none}',
+   '  .pi-steps span{flex:0 0 auto;padding:6px 11px;font-size:12px;scroll-margin:0 22px}',
+   '  .pi-body{padding:12px}',
+   '  .pi-foot{padding:10px 12px;gap:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}',
+   '  .pi-btn{min-height:46px;padding:11px 16px;font-size:13.5px}',
+   '  .pi-tool{min-height:42px;padding:10px 13px;font-size:12.5px}',
+   '  .pi-note{font-size:12.5px;line-height:1.55}',
+   '  .pi-in{font-size:16px;min-height:44px}',
+   '  .pi-chip{padding:6px 11px;font-size:12px}',
+   '  .pi-table{font-size:14px}',
+   '  .pi-table th,.pi-table td{padding:10px 6px}',
+   '  .pi-table td[contenteditable]{min-width:92px;min-height:46px}',
+   '  .pi-canvas-wrap{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch}',
+   '  #pi-map{height:260px}',
+   '}',
    '.pi-head{box-shadow:var(--hl);position:relative}',
    /* Reflejo sobre el filete inferior, igual que en la cabecera del visor. */
    '.pi-head::after{content:\'\';position:absolute;left:0;right:0;bottom:-1px;height:1px;pointer-events:none;opacity:.45;mix-blend-mode:screen;background:linear-gradient(90deg,rgba(217,177,74,0),rgba(255,251,233,.75) 30%,rgba(217,177,74,.18) 50%,rgba(255,251,233,.75) 70%,rgba(217,177,74,0))}',
@@ -7665,12 +7814,21 @@ function piCropClear(){S.plano.crop=null;piMountPreview();}
 /* Arrastre de un rectángulo sobre un canvas mostrado; devuelve rect en coords fuente. */
 function piBindDrag(wrap,disp,onRect){
   var st=S.plano, start=null;
-  function pos(ev){var r=disp.getBoundingClientRect();var cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-r.left;var cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-r.top;return {x:Math.max(0,Math.min(disp.width,cx)),y:Math.max(0,Math.min(disp.height,cy))};}
+  function punto(ev){
+    if(ev.touches&&ev.touches.length)return ev.touches[0];
+    if(ev.changedTouches&&ev.changedTouches.length)return ev.changedTouches[0];   // touchend
+    return ev;
+  }
+  function pos(ev){var r=disp.getBoundingClientRect(),p=punto(ev);var cx=p.clientX-r.left,cy=p.clientY-r.top;return {x:Math.max(0,Math.min(disp.width,cx)),y:Math.max(0,Math.min(disp.height,cy))};}
   function down(ev){ev.preventDefault();start=pos(ev);var old=document.getElementById('pi-drawbox');if(old)old.remove();}
   function move(ev){if(!start)return;var p=pos(ev);var box=document.getElementById('pi-drawbox');if(!box){box=document.createElement('div');box.className='pi-sel';box.id='pi-drawbox';wrap.appendChild(box);}box.style.left=Math.min(start.x,p.x)+'px';box.style.top=Math.min(start.y,p.y)+'px';box.style.width=Math.abs(p.x-start.x)+'px';box.style.height=Math.abs(p.y-start.y)+'px';}
   function up(ev){if(!start)return;var p=pos(ev);var sc=st.dispScale||1;var rx=Math.min(start.x,p.x)/sc,ry=Math.min(start.y,p.y)/sc,rw=Math.abs(p.x-start.x)/sc,rh=Math.abs(p.y-start.y)/sc;start=null;if(rw>8&&rh>8)onRect({x:rx,y:ry,w:rw,h:rh});}
+  disp.style.touchAction='none';   // el arrastre selecciona, no desplaza la página
   disp.onmousedown=down;disp.onmousemove=move;window.addEventListener('mouseup',up);
-  disp.ontouchstart=down;disp.ontouchmove=move;disp.ontouchend=up;
+  disp.addEventListener('touchstart',down,{passive:false});
+  disp.addEventListener('touchmove',move,{passive:false});
+  disp.addEventListener('touchend',up);
+  disp.addEventListener('touchcancel',function(){start=null;var b=document.getElementById('pi-drawbox');if(b)b.remove();});
 }
 
 /* ── PASO: Tipo de extracción ── */
@@ -8043,7 +8201,10 @@ function piFillTable(){
       if(isC&&flags[i]&&flags[i].missing&&(field==='e'||field==='n'))cls.push('bad');
       if(field==='dir'&&badDir)cls.push('bad');
       if(field==='dist'&&badDist)cls.push('bad');
-      return '<td contenteditable class="'+cls.join(' ')+'" data-i="'+i+'" data-f="'+field+'" oninput="piCellEdit(this)">'+piEsc(val)+'</td>';
+      // inputmode: en un teléfono, las celdas numéricas abren el teclado de
+      // cifras en vez del alfabético (el rumbo lleva letras de cuadrante).
+      var modo=(field==='dir')?'text':'decimal';
+      return '<td contenteditable inputmode="'+modo+'" enterkeyhint="next" class="'+cls.join(' ')+'" data-i="'+i+'" data-f="'+field+'" oninput="piCellEdit(this)">'+piEsc(val)+'</td>';
     }
     if(isC){
       var dup=flags[i]&&flags[i].duplicate?' class="dup"':'';
@@ -8644,9 +8805,146 @@ function piAccept(){
   }catch(e){piToast('No se pudo incorporar el polígono: '+e.message,true,6000);console.error(e);}
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   HOJA DESLIZABLE EN MÓVIL
+   ──────────────────────────────────────────────────────────────────────────
+   En pantalla estrecha, la barra lateral y el mapa se repartían el alto en
+   vertical: con la cabecera (104 px), las pestañas (39 px) y la barra de estado
+   (58 px) fijas, al mapa le quedaban ~183 px en un teléfono de 740 px. Un visor
+   cartográfico con 183 px de mapa no se puede usar.
+
+   La solución es la misma que emplean las aplicaciones de mapas: el panel del
+   módulo se convierte en una HOJA sobre el mapa, con tres alturas —reducida,
+   media y completa—. El mapa ocupa siempre toda la zona disponible y la hoja se
+   arrastra o se toca para cambiar de altura.
+
+   No se oculta ni se elimina nada: todos los controles siguen ahí, y en
+   escritorio el comportamiento es exactamente el de antes (esta función solo
+   actúa por debajo de 900 px).
+   ══════════════════════════════════════════════════════════════════════════ */
+var HOJA={estado:'media',montada:false,arrastrando:false,movido:false,y0:0,h0:0,mq:null};
+
+function hojaEsMovil(){ return HOJA.mq ? HOJA.mq.matches : window.matchMedia('(max-width:900px)').matches; }
+
+/* Coloca el aviso justo encima del borde superior de la hoja. Se calcula desde
+   ese borde y no desde el alto de la hoja, porque `bottom` se mide desde el pie
+   de la ventana y la hoja se apoya sobre la barra de estado, no sobre el pie. */
+function hojaAvisoArriba(altura){
+  var main=document.getElementById('main'); if(!main)return;
+  var r=main.getBoundingClientRect();
+  var bordeHoja=r.bottom-altura;
+  var v=Math.round(window.innerHeight-bordeHoja)+12;
+  var tope=Math.round(window.innerHeight*0.55);   // con la hoja entera abierta, flota sobre ella
+  document.documentElement.style.setProperty('--hoja-aviso',Math.min(v,tope)+'px');
+}
+
+function hojaAplica(estado){
+  var sb=document.getElementById('sidebar'); if(!sb)return;
+  HOJA.estado=estado;
+  sb.classList.remove('hoja-min','hoja-media','hoja-max');
+  sb.classList.add('hoja-'+estado);
+  sb.style.height='';                       // deja mandar a la clase
+  var main=document.getElementById('main'), max=main?main.getBoundingClientRect().height:0;
+  hojaAvisoArriba(estado==='min'?46:(estado==='media'?max*0.55:max));
+  var t=document.getElementById('hoja-tirador');
+  if(t)t.setAttribute('aria-expanded', estado==='min'?'false':'true');
+  // Leaflet necesita saber que su contenedor cambió de tamaño.
+  setTimeout(function(){ try{ if(window.map&&map.invalidateSize)map.invalidateSize(); }catch(e){} },260);
+}
+
+function hojaCicla(){
+  hojaAplica(HOJA.estado==='min'?'media':(HOJA.estado==='media'?'max':'min'));
+}
+
+/* Arrastre vertical del tirador: mientras dura se fija la altura en píxeles (sin
+   transición) y al soltar se ajusta a la altura más cercana de las tres. */
+function hojaArrastre(t){
+  var sb=document.getElementById('sidebar');
+  function y(ev){ var p=(ev.touches&&ev.touches.length)?ev.touches[0]:((ev.changedTouches&&ev.changedTouches.length)?ev.changedTouches[0]:ev); return p.clientY; }
+  function inicio(ev){
+    if(!hojaEsMovil())return;
+    HOJA.arrastrando=true; HOJA.movido=false; HOJA.y0=y(ev); HOJA.h0=sb.getBoundingClientRect().height;
+    sb.classList.add('hoja-arrastrando');
+    if(ev.cancelable)ev.preventDefault();
+  }
+  function mueve(ev){
+    if(!HOJA.arrastrando)return;
+    var main=document.getElementById('main'), max=main.getBoundingClientRect().height;
+    var d=HOJA.y0-y(ev);
+    if(Math.abs(d)>6)HOJA.movido=true;
+    var h=Math.max(46,Math.min(max, HOJA.h0+d));
+    sb.style.height=h+'px'; hojaAvisoArriba(h);
+    if(ev.cancelable)ev.preventDefault();
+  }
+  /* `preventDefault()` en touchstart —necesario para que la página no se
+     desplace al arrastrar— cancela también el `click` sintético del toque. Por
+     eso el toque se resuelve aquí: si el dedo no llegó a recorrer 6 px, no fue
+     un arrastre sino un toque, y se pasa al estado siguiente. */
+  function fin(){
+    if(!HOJA.arrastrando)return;
+    HOJA.arrastrando=false; sb.classList.remove('hoja-arrastrando');
+    if(!HOJA.movido){ sb.style.height=''; hojaCicla(); return; }
+    var main=document.getElementById('main'), max=main.getBoundingClientRect().height;
+    var h=sb.getBoundingClientRect().height;
+    var opciones=[['min',46],['media',max*0.55],['max',max]];
+    var mejor=opciones[0], d=Infinity;
+    opciones.forEach(function(o){ var dd=Math.abs(o[1]-h); if(dd<d){d=dd;mejor=o;} });
+    hojaAplica(mejor[0]);
+  }
+  t.addEventListener('mousedown',inicio);
+  t.addEventListener('touchstart',inicio,{passive:false});
+  window.addEventListener('mousemove',mueve);
+  window.addEventListener('touchmove',mueve,{passive:false});
+  window.addEventListener('mouseup',fin);
+  window.addEventListener('touchend',fin);
+  window.addEventListener('touchcancel',fin);
+}
+
+function hojaMonta(){
+  var sb=document.getElementById('sidebar'); if(!sb||HOJA.montada)return;
+  HOJA.montada=true;
+  var t=document.createElement('button');
+  t.id='hoja-tirador'; t.type='button'; t.className='hoja-tirador';
+  t.setAttribute('aria-controls','sidebar');
+  t.setAttribute('aria-label','Cambiar el tamaño del panel del módulo');
+  t.innerHTML='<span class="hoja-pastilla"></span><span class="hoja-txt"></span>';
+  /* El toque y el arrastre los resuelve hojaArrastre. Aquí solo queda el
+     teclado: al activar el botón con Intro o Espacio el navegador emite un
+     click con detail 0, que no viene de ningún puntero. */
+  t.addEventListener('click',function(ev){ if(ev.detail===0)hojaCicla(); });
+  sb.insertBefore(t,sb.firstChild);
+  hojaArrastre(t);
+  hojaAplica('media');
+}
+
+function hojaDesmonta(){
+  var sb=document.getElementById('sidebar'); if(!sb)return;
+  sb.classList.remove('hoja-min','hoja-media','hoja-max','hoja-arrastrando');
+  sb.style.height='';
+  var t=document.getElementById('hoja-tirador'); if(t)t.remove();
+  document.documentElement.style.removeProperty('--hoja-aviso');
+  HOJA.montada=false;
+  setTimeout(function(){ try{ if(window.map&&map.invalidateSize)map.invalidateSize(); }catch(e){} },60);
+}
+
+function hojaInit(){
+  HOJA.mq=window.matchMedia('(max-width:900px)');
+  function sincroniza(){ if(HOJA.mq.matches)hojaMonta(); else hojaDesmonta(); }
+  if(HOJA.mq.addEventListener)HOJA.mq.addEventListener('change',sincroniza);
+  else if(HOJA.mq.addListener)HOJA.mq.addListener(sincroniza);
+  sincroniza();
+  /* Al cambiar de módulo con la hoja reducida no se vería el panel nuevo: se
+     sube a media para que los controles queden a la vista. */
+  var tabs=document.getElementById('tabs');
+  if(tabs)tabs.addEventListener('click',function(){
+    if(hojaEsMovil()&&HOJA.estado==='min')hojaAplica('media');
+  });
+}
+
 /* ── BOOT ── */
 window.addEventListener('load',async()=>{
   setLS('🌿 Cargando capas…');
+  try{ hojaInit(); }catch(e){ console.error(e); }
   // Descubrir configuración de imágenes aéreas en segundo plano (no bloquea)
   discoverImageryConfig().catch(()=>{});
   try{await loadLayers();toast('✅ Capas de cobertura cargadas');}
