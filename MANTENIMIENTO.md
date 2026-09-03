@@ -9,9 +9,11 @@ Sitio **100 % estático** en GitHub Pages: un `index.html` autosuficiente
 (datos de cobertura embebidos gzip+base64) generado por `gen_v3.py`, más
 capas GPKG en `data/` que se descargan bajo demanda. **No hay backend, base
 de datos, variables de entorno ni secretos**; todo el geoproceso corre en el
-navegador. La única pieza de infraestructura propia es el proxy OGC
-(Cloudflare Worker `psforgis-ocg`), que solo añade CORS y caché a servicios
-públicos.
+navegador. La única pieza de infraestructura propia es el Worker de Cloudflare
+`psforgis-ocg`: la ruta `/ogc` añade CORS y caché a servicios públicos y la ruta
+opcional `/ia-plano` custodia la clave del proveedor de IA para la lectura
+asistida del asistente de planos (código de referencia en
+`docs/worker-ia-plano.js`, detalle en `docs/ia-plano.md`).
 
 ## Instalar / ejecutar
 
@@ -66,6 +68,58 @@ git push origin main
 Al ser un sitio estático sin estado, revertir el commit ES el rollback
 completo. Subir versión en `version.json` para forzar la recarga de clientes.
 
+## Sistema visual (al tocar CSS)
+
+La hoja de estilos termina con una sección marcada **«CAPA DE REFINAMIENTO
+VISUAL»**. Es deliberada: el refinamiento vive en un bloque legible y reversible
+en lugar de repartido por todo el archivo. Junto a ella, `:root` define una
+**escala de forma** que no contiene ningún color:
+
+| Grupo | Tokens | Para qué |
+|---|---|---|
+| Radios | `--r-xs` 4px · `--r-sm` 7px · `--r-md` 10px · `--r-lg` 14px · `--r-pill` | Antes cada regla elegía el suyo (3,4,5,6,7,8,9,11,12,16,18 px); un conjunto acotado es lo que hace que las piezas se lean como un sistema. |
+| Elevación | `--e-1` … `--e-4` | Cuatro alturas: apoyado, tarjeta, flotante, modal. |
+| Filo de luz | `--hl` | Línea blanca al 6 % en el borde superior. Es el recurso que más eleva una interfaz oscura: simula luz cenital y separa superficies sin subir el contraste. |
+| Movimiento | `--ease`, `--ease-out`, `--dur-1/2/3` | Curvas y duraciones únicas para todas las transiciones. |
+
+### Móvil (por debajo de 900 px)
+
+Al final de la hoja hay una segunda sección marcada, **«CAPA MÓVIL»**, escrita
+sobre mediciones reales en 390×844 y 360×740, no a ojo. Lo que resuelve:
+
+| Problema medido | Solución |
+|---|---|
+| Al mapa le quedaban **183 px** de alto en un teléfono de 740: la barra lateral y el mapa se repartían el espacio bajo una cabecera, unas pestañas y una barra de estado fijas. | **Hoja deslizable**: el mapa ocupa toda la zona útil y el panel del módulo flota encima con tres alturas (reducida 46 px, media 55 %, completa). El mapa pasa a **533 px**. Lógica en `hojaInit()` y siguientes; solo se monta por debajo de 900 px y se desmonta sola al ensanchar. |
+| Casi ningún control llegaba a los **44 px** recomendados (WCAG 2.5.5): las casillas medían 17×17 y el deslizador de opacidad 16 px de alto. | Alturas mínimas en pestañas, filas de capa, botones, píldoras y celdas. Las casillas van dentro de su `<label>`, así que el objetivo real es la fila entera. |
+| Los campos usaban 13 px y **iOS amplía la página** al enfocar un campo de menos de 16 px. | 16 px en todos los campos dentro de la consulta móvil. |
+| El riel de pasos del asistente se apilaba en diez filas: **241 px de 740**, un tercio de la pantalla. | Una sola fila desplazable con difuminado al final: **103 px**. |
+| `100vh` no descuenta la barra del navegador móvil y tapaba la barra de estado. | `100dvh` (la regla de `100vh` queda como respaldo) y `env(safe-area-inset-bottom)` para pantallas con muesca. |
+| El resaltado de «cursor encima» se quedaba pegado tras tocar. | `@media (hover:none)` anula los desplazamientos, conservando los cambios de color. |
+
+**Al tocar la hoja deslizable:** el estado vive en `HOJA` y se aplica con
+`hojaAplica('min'|'media'|'max')`. El toque y el arrastre se resuelven **ambos
+en `hojaArrastre`**, porque el `preventDefault()` del `touchstart` —necesario
+para que la página no se desplace al arrastrar— cancela también el `click`
+sintético; el `click` solo queda para el teclado (`ev.detail===0`). La hoja
+publica su altura en la variable CSS `--hoja-aviso` para que el aviso se
+coloque justo encima.
+
+**Dos reglas al editar:**
+
+1. **No se cambian los colores.** La paleta institucional (`--bg`, `--sb`,
+   `--card`, `--acc`, `--acc2`, `--gold`, `--moss`, `--txt`, `--txt2`, `--warn`,
+   `--red`) es identidad, no decoración. Para profundidad se usan blanco y negro
+   con transparencia —que es lo que produce sombra y filo de luz—, y para
+   transparencias de un tono se reexpresa en `rgba()` un hex que ya exista. La
+   autoverificación «Paleta institucional intacta» de `gen_v3.py` lo vigila.
+2. **Cualquier animación nueva se apaga** en el bloque
+   `@media (prefers-reduced-motion:reduce)`, y nada que comunique estado puede
+   depender solo del movimiento.
+
+El asistente «Importar predio desde plano» tiene su propia hoja (inyectada por
+`piInjectStyle()`), con su capa de refinamiento equivalente al final; consume los
+mismos tokens de `:root`.
+
 ## Regenerar index.html
 
 `gen_v3.py` requiere `layers_b64.json` y `membrete_sinac.dotx` (el primero
@@ -89,6 +143,15 @@ auto-verificaciones (✅/❌) del HTML generado; no publicar si alguna falla.
 | PDF.js | 3.11.174 | plano PDF (con `isEvalSupported:false`) | módulo plano |
 | UTIF | 3.1.0 | plano TIFF (carga diferida) | módulo plano |
 | Tesseract.js | 5.1.1 | OCR local del asistente «Importar predio desde plano» (carga diferida + SRI en el script principal; worker, core WASM y `eng.traineddata` los carga la propia librería desde jsDelivr, dentro de la CSP y en un Web Worker) | módulo importar-plano (degrada a transcripción manual) |
+
+### Opcional (no es una librería: es un servicio propio)
+
+| Pieza | Rol | Riesgo si falta |
+|---|---|---|
+| Worker `psforgis-ocg`, ruta `/ia-plano` | Lectura asistida por IA del recuadro del plano; custodia la clave del proveedor | Solo el botón «Leer con IA» (devuelve un error claro); el asistente sigue completo con OCR local, texto nativo de PDF, trazado y transcripción manual |
+
+Mientras el endpoint no esté desplegado el visor funciona igual: nada más
+depende de él. Para activarlo, ver `docs/ia-plano.md` § «Cómo activarlo».
 
 **Decisiones tomadas para minimizar cambios futuros:**
 

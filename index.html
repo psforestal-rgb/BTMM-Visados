@@ -13,7 +13,19 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0a1830;--sb:#0c1f3d;--card:#13294d;--acc:#2f5fa0;--acc2:#4a7cc4;--gold:#d9b14a;--moss:#6f8f5e;--txt:#eef3fb;--txt2:#aebbd2;--warn:#e0a44b;--red:#e15b5b}
+:root{--bg:#0a1830;--sb:#0c1f3d;--card:#13294d;--acc:#2f5fa0;--acc2:#4a7cc4;--gold:#d9b14a;--moss:#6f8f5e;--txt:#eef3fb;--txt2:#aebbd2;--warn:#e0a44b;--red:#e15b5b;
+  /* Escala de forma (sin color): radios, elevación, filo de luz y curvas de
+     movimiento. Antes cada regla elegía su propio radio (3,4,5,6,7,8,9,11…) y
+     su propia sombra; unificarlos es lo que hace que el conjunto se lea como
+     un sistema y no como piezas sueltas. */
+  --r-xs:4px;--r-sm:7px;--r-md:10px;--r-lg:14px;--r-pill:999px;
+  --e-1:0 1px 2px rgba(0,0,0,.3);
+  --e-2:0 2px 6px rgba(0,0,0,.34),0 1px 2px rgba(0,0,0,.24);
+  --e-3:0 8px 24px rgba(0,0,0,.44),0 2px 6px rgba(0,0,0,.3);
+  --e-4:0 20px 54px rgba(0,0,0,.58),0 4px 12px rgba(0,0,0,.36);
+  --hl:inset 0 1px 0 rgba(255,255,255,.06);
+  --ease:cubic-bezier(.2,.7,.3,1);--ease-out:cubic-bezier(.16,1,.3,1);
+  --dur-1:.14s;--dur-2:.24s;--dur-3:.4s}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 
 /* ── HEADER ── */
@@ -310,6 +322,377 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
   #rp{left:8px;right:8px;width:auto;max-height:60vh}
   #minimap-grid{grid-template-columns:1fr}
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CAPA DE REFINAMIENTO VISUAL
+   ──────────────────────────────────────────────────────────────────────────
+   Ajusta únicamente FORMA: geometría (radios, espesores), profundidad
+   (sombras y filos de luz), tipografía (rasterizado, cifras tabulares),
+   movimiento (curvas y duraciones) y afordancias (foco, desbordamiento,
+   estados). **No cambia ni un solo color de la identidad institucional**: no
+   se introduce ningún matiz nuevo — solo se usan los tonos ya definidos y
+   blanco/negro con transparencia, que es lo que produce sombra y filo de luz.
+
+   Va al final de la hoja a propósito: así el refinamiento es una capa
+   legible y reversible sobre las reglas existentes, en lugar de una reescritura
+   dispersa por todo el archivo.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Fundamentos ───────────────────────────────────────────────────────────
+   El filo de luz (--hl) es el recurso que más eleva una interfaz oscura: una
+   línea blanca de 6 % en el borde superior simula que la luz cae desde arriba
+   y separa cada superficie de su fondo sin necesidad de subir el contraste. */
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+::selection{background:rgba(74,124,196,.42);color:var(--txt)}
+
+/* Barras de desplazamiento coherentes en todo el visor (antes cada contenedor
+   tenía las suyas o las del sistema). */
+*{scrollbar-width:thin;scrollbar-color:rgba(174,187,210,.34) transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:rgba(174,187,210,.28);border-radius:var(--r-pill);border:2px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:rgba(174,187,210,.5);background-clip:padding-box}
+*::-webkit-scrollbar-corner{background:transparent}
+
+/* Foco visible de dos anillos: el trazo marca el elemento y el halo lo separa
+   del fondo. Se mantiene el grosor y el color anteriores. */
+button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,
+textarea:focus-visible,a:focus-visible,[contenteditable]:focus-visible{
+  outline:2px solid var(--gold)!important;outline-offset:2px;
+  box-shadow:0 0 0 5px rgba(217,177,74,.16)!important}
+
+/* Cifras tabulares donde se comparan números en vertical: las columnas quedan
+   alineadas dígito con dígito, como en un instrumento de medición. */
+.td-num,.rtbl,#ci,#zi,.coo,.pi-table,.mm-title,.report-state{font-variant-numeric:tabular-nums}
+
+/* ── Cabecera ──────────────────────────────────────────────────────────────
+   El filete dorado inferior gana un reflejo (los mismos dorados del título) y
+   la cabecera proyecta sombra sobre el contenido: deja de ser una franja
+   pegada para pasar a ser un plano superior. */
+#header{position:relative;box-shadow:0 12px 32px -18px rgba(0,0,0,.9)}
+#header::after{content:'';position:absolute;left:0;right:0;bottom:-2px;height:2px;pointer-events:none;
+  background:linear-gradient(90deg,rgba(217,177,74,0) 0%,rgba(255,251,233,.9) 20%,rgba(217,177,74,.2) 50%,rgba(255,251,233,.9) 80%,rgba(217,177,74,0) 100%);
+  opacity:.5;mix-blend-mode:screen}
+#header h1{text-wrap:balance}
+#logo{transition:transform var(--dur-3) var(--ease-out),box-shadow var(--dur-3) var(--ease-out);
+  box-shadow:0 2px 9px rgba(0,0,0,.55),0 0 0 1px rgba(217,177,74,.28),inset 0 0 0 1px rgba(255,255,255,.05)}
+#logo:hover{transform:translateY(-1px) scale(1.02);
+  box-shadow:0 6px 18px rgba(0,0,0,.6),0 0 0 1px rgba(217,177,74,.5),0 0 22px rgba(217,177,74,.18)}
+
+/* ── Pestañas de módulo ────────────────────────────────────────────────────
+   El indicador activo pasa de un borde plano a una barra de extremos
+   redondeados que se despliega desde el centro; en reposo insinúa la mitad al
+   pasar el cursor. El difuminado en los extremos avisa de que la fila sigue
+   más allá del borde (antes no había ninguna pista de desbordamiento). */
+#tabs{-webkit-mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,1) 16px,rgba(0,0,0,1) calc(100% - 16px),transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,1) 16px,rgba(0,0,0,1) calc(100% - 16px),transparent 100%)}
+.tab{position:relative;border-bottom-color:transparent!important;
+  transition:color var(--dur-1) var(--ease),background-color var(--dur-1) var(--ease)}
+.tab::after{content:'';position:absolute;left:9px;right:9px;bottom:0;height:3px;
+  border-radius:var(--r-pill) var(--r-pill) 0 0;background:var(--gold);
+  transform:scaleX(0);transform-origin:50% 100%;
+  transition:transform var(--dur-2) var(--ease-out),opacity var(--dur-2) var(--ease)}
+.tab:not(.active):hover::after{transform:scaleX(.42);opacity:.45}
+.tab.active::after{transform:scaleX(1);opacity:1;box-shadow:0 0 12px rgba(217,177,74,.45)}
+.tab .tb{display:inline-block;transition:transform var(--dur-2) var(--ease-out)}
+.tab:hover .tb{transform:translateY(-1px)}
+.tab .soon{border:1px solid rgba(255,255,255,.09);border-radius:var(--r-pill)}
+/* La franja de pestañas recorta en vertical (tiene overflow-x), así que un
+   anillo de foco por fuera se vería cortado: aquí va por dentro. */
+.tab{border-radius:var(--r-sm) var(--r-sm) 0 0}
+.tab:focus-visible{outline-offset:-3px!important;box-shadow:none!important}
+
+/* ── Barra lateral ─────────────────────────────────────────────────────────
+   Las tarjetas se separan del fondo con radio mayor, sombra y filo de luz. El
+   rótulo de cada tarjeta se prolonga en una regla que se desvanece: ordena la
+   lectura vertical sin añadir ni una palabra. */
+.pnl{border-radius:var(--r-md);box-shadow:var(--e-2),var(--hl);
+  transition:border-color var(--dur-2) var(--ease),box-shadow var(--dur-2) var(--ease)}
+.pnl:hover{border-color:var(--acc);box-shadow:var(--e-3),var(--hl)}
+.pt{display:flex;align-items:center;gap:9px}
+.pt::after{content:'';flex:1 1 auto;min-width:14px;height:1px;border-radius:1px;
+  background:linear-gradient(90deg,rgba(217,177,74,.42) 0%,rgba(217,177,74,.08) 55%,rgba(217,177,74,0) 100%)}
+.global-ref-summary .pt{flex:1 1 auto;min-width:0}
+.global-ref-summary{transition:background-color var(--dur-1) var(--ease)}
+.global-ref-summary:hover{background:rgba(255,255,255,.03)}
+.global-ref-summary:after{transition:transform var(--dur-2) var(--ease-out)}
+#global-ref-card,#predio-zoom-card{border-radius:var(--r-md)}
+
+/* Fila de capa: barra de acento a la izquierda y desplazamiento mínimo al
+   pasar el cursor — señala el objetivo del clic en una lista densa. */
+.ltog{border-radius:var(--r-sm);position:relative;
+  transition:background-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
+.ltog:hover{transform:translateX(2px);box-shadow:inset 3px 0 0 rgba(217,177,74,.55)}
+.ltog input,.report-item input{transition:transform var(--dur-1) var(--ease)}
+.ltog:hover input{transform:scale(1.06)}
+.lbadge{border:1px solid rgba(255,255,255,.08);letter-spacing:.3px}
+
+/* ── Botones ───────────────────────────────────────────────────────────────
+   Elevación al pasar el cursor y hundimiento al pulsar: el botón responde como
+   una superficie física. El barrido de luz del botón dorado retoma el mismo
+   lenguaje del brillo del título de la cabecera. */
+.btn{border-radius:var(--r-sm);
+  transition:background var(--dur-2) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease),filter var(--dur-2) var(--ease)}
+.btn:not(:disabled):hover{transform:translateY(-1px)}
+.btn:not(:disabled):active{transform:translateY(0)}
+.bp{position:relative;overflow:hidden}
+.bp::after{content:'';position:absolute;top:0;bottom:0;left:0;width:42%;pointer-events:none;
+  background:linear-gradient(105deg,rgba(255,255,255,0),rgba(255,255,255,.42) 50%,rgba(255,255,255,0));
+  transform:translateX(-170%);transition:transform .75s var(--ease-out)}
+.bp:not(:disabled):hover::after{transform:translateX(375%)}
+.bp:not(:disabled):hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 4px 12px rgba(0,0,0,.45)}
+.bs,.bd{box-shadow:var(--hl)}
+.bs:hover,.bd:hover{box-shadow:var(--hl),var(--e-2)}
+.btn-video-tut,#splash-video{border-radius:var(--r-sm);
+  transition:background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease)}
+.btn-video-tut:hover,#splash-video:hover{transform:translateY(-1px);border-color:var(--acc)}
+
+/* ── Zona de arrastre ──────────────────────────────────────────────────────
+   Al arrastrar un archivo encima, el recuadro late: confirma que la zona está
+   activa sin depender solo del cambio de borde. */
+#dz{border-radius:var(--r-md);transition:border-color var(--dur-2) var(--ease),background-color var(--dur-2) var(--ease),box-shadow var(--dur-2) var(--ease),transform var(--dur-2) var(--ease)}
+#dz:hover{transform:translateY(-1px);box-shadow:var(--e-2)}
+#dz .di{display:inline-block;transition:transform var(--dur-3) var(--ease-out)}
+#dz:hover .di{transform:translateY(-2px) scale(1.08)}
+#dz.drag-over{animation:dzLatido 1.15s ease-in-out infinite}
+@keyframes dzLatido{
+  0%,100%{box-shadow:0 0 0 0 rgba(74,124,196,.34)}
+  50%{box-shadow:0 0 0 7px rgba(74,124,196,0)}}
+
+/* Campos de texto de la barra lateral (llevan estilo en línea: el radio y el
+   foco necesitan ganarle en especificidad). */
+#informe-num,#plano-num{border-radius:var(--r-sm)!important;
+  transition:border-color var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
+#informe-num:focus,#plano-num:focus{border-color:var(--acc2)!important}
+
+/* ── Selector de modo de plano y listas de tarjetas ───────────────────────── */
+.pdf-mode-option{border-radius:var(--r-sm);box-shadow:var(--hl);
+  transition:background-color var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease)}
+.pdf-mode-option:hover{transform:translateY(-1px);box-shadow:var(--hl),var(--e-2)}
+.pdf-mode-option.active{box-shadow:0 0 0 1px rgba(217,177,74,.24) inset,var(--e-2)}
+.pdf-mode-icon{transition:transform var(--dur-2) var(--ease-out)}
+.pdf-mode-option:hover .pdf-mode-icon{transform:scale(1.1)}
+.pdf-mode-panel,.pdf-mode-placeholder,.pdf-tools,.pdf-tools .stat,.pdf-pair{border-radius:var(--r-sm)}
+.pdf-tools{box-shadow:var(--hl)}
+.report-item{border-radius:var(--r-sm);
+  transition:background-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
+.report-item:hover{transform:translateX(2px);box-shadow:inset 3px 0 0 rgba(217,177,74,.45)}
+.report-state.ready{position:relative}
+.ph-item{border-radius:var(--r-sm);transition:transform var(--dur-1) var(--ease),border-left-color var(--dur-2) var(--ease)}
+.ph-item:hover{transform:translateX(2px);border-left-color:var(--acc2)}
+.ph-badge{border-radius:var(--r-pill)}
+.ph-icon{animation:phFlotar 5.5s ease-in-out infinite}
+@keyframes phFlotar{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+
+/* ── Panel de resultados ───────────────────────────────────────────────────
+   Superficie de vidrio: el desenfoque del fondo lo despega del mapa y hace
+   legible el contenido sobre cualquier ortofoto. La barra de título muestra un
+   asidero de arrastre (tres surcos) que antes solo se adivinaba por el cursor. */
+#rp{border-radius:var(--r-lg);box-shadow:var(--e-4);
+  -webkit-backdrop-filter:blur(16px) saturate(1.12);backdrop-filter:blur(16px) saturate(1.12);
+  border-color:rgba(47,95,160,.85)}
+#rh{position:relative;box-shadow:var(--hl)}
+#rh::before{content:'';position:absolute;left:50%;top:5px;width:34px;height:3px;margin-left:-17px;
+  border-radius:var(--r-pill);opacity:.34;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.9) 0 3px,rgba(255,255,255,0) 3px 6px)}
+#rc button{transition:background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease)}
+#rc button:not(:disabled):hover{transform:translateY(-1px)}
+#rb{scrollbar-gutter:stable}
+.rtab{border-radius:var(--r-pill);box-shadow:var(--hl);
+  transition:background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease)}
+.rtab:hover{transform:translateY(-1px);box-shadow:var(--hl),var(--e-2)}
+.rtab.active{box-shadow:var(--hl),0 3px 10px rgba(0,0,0,.4)}
+#rp-reopen{border-radius:var(--r-pill);transition:transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease)}
+#rp-reopen:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.6)}
+.mm-div{border-radius:var(--r-sm);box-shadow:var(--e-1)}
+
+/* Tabla de resultados: encabezado que permanece a la vista al desplazar (el
+   borde se dibuja con sombra interior porque las celdas van colapsadas) y
+   realce de la fila bajo el cursor con un tono ya presente en la propia tabla. */
+.rtbl th{position:sticky;top:0;z-index:2;box-shadow:inset 0 0 0 1px #9eb09e}
+.rtbl tbody tr:not(.td-total):hover td:not(.td-layer){background:#e6eef8}
+.rtbl td,.rtbl th{transition:background-color var(--dur-1) var(--ease)}
+.bar-wrap{border-radius:var(--r-pill);box-shadow:inset 0 1px 2px rgba(0,0,0,.45)}
+.bar-fill{border-radius:var(--r-pill);box-shadow:inset 0 1px 0 rgba(255,255,255,.28)}
+
+/* ── Avisos, progreso y barra de estado ────────────────────────────────────
+   El aviso pasa de la cabecera al pie. Antes salía a 55 px del borde superior y
+   tapaba la identificación institucional —el nombre del autor y el contacto—
+   justo mientras se cargaban las capas. Anclarlo abajo lo resuelve a cualquier
+   ancho: la cabecera crece al envolver el texto en pantallas estrechas, así que
+   ninguna distancia fija desde arriba servía para todos los tamaños. Queda
+   sobre el mapa, centrado y por encima de la barra de estado. */
+#toast{top:auto;bottom:52px;border-radius:var(--r-pill);box-shadow:var(--e-3);
+  max-width:min(560px,calc(100vw - 28px));text-align:center;line-height:1.4;
+  -webkit-backdrop-filter:blur(12px) saturate(1.1);backdrop-filter:blur(12px) saturate(1.1);
+  animation:toastEntra .32s var(--ease-out)}
+@keyframes toastEntra{from{opacity:0;transform:translateX(-50%) translateY(12px) scale(.97)}
+  to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+#po{-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.pb{border-radius:var(--r-lg);box-shadow:var(--e-4),var(--hl)}
+.pbw{border-radius:var(--r-pill);box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+.pbi{border-radius:var(--r-pill);position:relative;overflow:hidden}
+.pbi::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.32) 50%,rgba(255,255,255,0) 100%);
+  background-size:180% 100%;animation:pbBrillo 1.4s linear infinite}
+@keyframes pbBrillo{from{background-position:180% 0}to{background-position:-80% 0}}
+#stb{box-shadow:var(--hl)}
+#ci{border-radius:var(--r-sm);box-shadow:inset 0 1px 2px rgba(0,0,0,.35)}
+#pdf-map-guide{border-radius:var(--r-sm);box-shadow:var(--e-3);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+
+/* ── Ventana de ingreso ────────────────────────────────────────────────────
+   La tarjeta entra con una elevación breve en lugar de aparecer de golpe. */
+#splash-card{box-shadow:var(--e-4),var(--hl);animation:splashEntra .55s var(--ease-out) both}
+@keyframes splashEntra{from{opacity:0;transform:translateY(14px) scale(.985)}
+  to{opacity:1;transform:translateY(0) scale(1)}}
+.splash-field input{transition:border-color var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
+#splash-enter{border-radius:var(--r-md);position:relative;overflow:hidden}
+#splash-enter::after{content:'';position:absolute;top:0;bottom:0;left:0;width:42%;pointer-events:none;
+  background:linear-gradient(105deg,rgba(255,255,255,0),rgba(255,255,255,.45) 50%,rgba(255,255,255,0));
+  transform:translateX(-170%);transition:transform .75s var(--ease-out)}
+#splash-enter:not(:disabled):hover::after{transform:translateX(375%)}
+#splash-enter:not(:disabled):hover{transform:translateY(-1px)}
+
+/* ── Respeto por «reducir movimiento» ──────────────────────────────────────
+   Todo lo que se anima arriba se detiene aquí; nada de lo que comunica estado
+   depende únicamente del movimiento. */
+@media (prefers-reduced-motion:reduce){
+  #dz.drag-over,.ph-icon,.pbi::after,#splash-card,#toast{animation:none}
+  .btn:not(:disabled):hover,.ltog:hover,.report-item:hover,.ph-item:hover,
+  .pdf-mode-option:hover,.rtab:hover,#rp-reopen:hover,#dz:hover,#logo:hover,
+  .btn-video-tut:hover,#splash-video:hover,#splash-enter:not(:disabled):hover{transform:none}
+  .tab::after{transition:none}
+}
+
+@media (max-width:900px){
+  /* La barra de estado es más alta en pantalla estrecha (58 px): el aviso sube
+     lo justo para no montarse encima. */
+  #toast{bottom:74px}
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CAPA MÓVIL
+   ──────────────────────────────────────────────────────────────────────────
+   Medido sobre teléfonos reales (390×844 y 360×740) antes de escribir nada.
+   Los problemas encontrados y lo que resuelve cada bloque:
+
+     · Al mapa le quedaban 183 px de alto en un teléfono de 740 px, porque la
+       barra lateral y el mapa se repartían el espacio en vertical bajo una
+       cabecera, unas pestañas y una barra de estado fijas → HOJA DESLIZABLE.
+     · Casi ningún control llegaba a los 44 px recomendados: las casillas medían
+       17×17 px y el deslizador de opacidad 16 px de alto → OBJETIVOS TÁCTILES.
+     · Los campos de texto usaban 13 px, y iOS amplía la página al enfocar un
+       campo de menos de 16 px → TIPOGRAFÍA DE FORMULARIO.
+     · El riel de pasos del asistente se apilaba en diez filas y ocupaba 241 px
+       de los 740 (un tercio de la pantalla) → RIEL EN UNA SOLA LÍNEA.
+     · `100vh` no descuenta la barra del navegador móvil, así que la barra de
+       estado quedaba tapada → ALTURA DINÁMICA.
+     · El resaltado de «cursor encima» se queda pegado tras tocar en una
+       pantalla táctil → SIN ESTADOS DE CURSOR EN TÁCTIL.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Altura dinámica: descuenta la barra del navegador cuando se muestra u oculta.
+   Se declara después de la regla de 100vh, que queda como respaldo. */
+body{height:100dvh}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+
+/* En una pantalla táctil no hay cursor: el realce de «encima» se quedaría
+   pegado después de tocar. Se conservan los cambios de color, se quita el
+   desplazamiento. */
+@media (hover:none){
+  .btn:not(:disabled):hover,.ltog:hover,.report-item:hover,.ph-item:hover,
+  .pdf-mode-option:hover,.rtab:hover,#rp-reopen:hover,#dz:hover,#logo:hover,
+  .btn-video-tut:hover,#splash-video:hover,#rc button:not(:disabled):hover,
+  .tab:hover .tb{transform:none}
+  .bp:not(:disabled):hover::after{transform:translateX(-170%)}
+}
+
+@media (max-width:900px){
+  /* ── La hoja ────────────────────────────────────────────────────────────
+     El mapa pasa a ocupar toda la zona útil y el panel del módulo flota encima
+     con tres alturas. Nada se oculta: el contenido del panel es el mismo y se
+     desplaza dentro de la hoja. */
+  #main{position:relative}
+  #map{position:absolute;inset:0;width:100%;height:100%;min-height:0}
+  #sidebar{position:absolute;left:0;right:0;bottom:0;top:auto;z-index:900;
+    width:100%;max-width:none;max-height:100%;
+    border:none;border-top:1px solid rgba(217,177,74,.35);
+    border-radius:var(--r-lg) var(--r-lg) 0 0;
+    box-shadow:0 -18px 44px rgba(0,0,0,.55),var(--hl);
+    -webkit-backdrop-filter:blur(14px) saturate(1.1);backdrop-filter:blur(14px) saturate(1.1);
+    transition:height var(--dur-3) var(--ease-out)}
+  #sidebar.hoja-arrastrando{transition:none}
+  #sidebar.hoja-min{height:46px}
+  #sidebar.hoja-media{height:55%}
+  #sidebar.hoja-max{height:100%}
+  /* En la altura reducida solo se ve el tirador. */
+  #sidebar.hoja-min>*:not(.hoja-tirador){display:none}
+
+  .hoja-tirador{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:3px;width:100%;min-height:46px;padding:7px 10px 5px;
+    background:none;border:none;color:var(--txt2);font-family:inherit;cursor:grab;
+    touch-action:none;-webkit-user-select:none;user-select:none}
+  .hoja-tirador:active{cursor:grabbing}
+  .hoja-pastilla{width:44px;height:5px;border-radius:var(--r-pill);
+    background:rgba(174,187,210,.5);transition:background-color var(--dur-2) var(--ease),width var(--dur-2) var(--ease)}
+  .hoja-tirador:active .hoja-pastilla{background:var(--gold);width:56px}
+  .hoja-txt{font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;line-height:1.2}
+  .hoja-min .hoja-txt::after{content:'Panel del módulo — toque para abrir'}
+  .hoja-media .hoja-txt::after{content:'Toque para ampliar · arrastre para ajustar'}
+  .hoja-max .hoja-txt::after{content:'Toque para reducir y ver el mapa'}
+
+  /* ── Objetivos táctiles ────────────────────────────────────────────────
+     44 px es el mínimo recomendado (WCAG 2.5.5 e Interfaz Humana de iOS). */
+  .tab{min-height:48px;padding:12px 15px;font-size:13.5px}
+  .ltog{min-height:46px;padding:8px 6px;gap:10px}
+  .ltog input,.report-item input{width:23px;height:23px;flex:0 0 23px}
+  .btn{min-height:46px;font-size:13.5px}
+  .btn-video-tut,#splash-video{min-height:44px;padding:11px 13px;font-size:12.5px}
+  .global-ref-summary{min-height:48px}
+  .report-item{padding:11px 9px;font-size:12.5px}
+  .pdf-mode-option{min-height:64px;padding:11px}
+  .pdf-pair button{min-height:38px;padding:8px 11px}
+  .rtab{min-height:40px;padding:8px 13px}
+  .rtab-x{width:26px;height:26px;font-size:16px}
+  #rc button{width:40px;height:38px;font-size:17px}
+  #rc .rh-btn{min-height:38px;padding:6px 12px}
+  /* Deslizador de opacidad: la pista es fina, pero la zona sensible al dedo no
+     tiene por qué serlo. */
+  input[type=range]{height:44px;padding:0}
+  input[type=range]::-webkit-slider-thumb{width:24px;height:24px}
+  input[type=range]::-moz-range-thumb{width:24px;height:24px}
+
+  /* ── Tipografía de formulario ───────────────────────────────────────────
+     Por debajo de 16 px, iOS amplía la página al enfocar el campo y deja al
+     usuario desplazado y desorientado. */
+  #informe-num,#plano-num,.splash-field input,.pi-in{font-size:16px!important}
+  #informe-num,#plano-num{min-height:46px}
+
+  /* ── Zona segura (pantallas con muesca o barra de gestos) ───────────────── */
+  #stb{padding-bottom:calc(5px + env(safe-area-inset-bottom));
+    min-height:calc(58px + env(safe-area-inset-bottom))}
+  #sidebar{padding-bottom:env(safe-area-inset-bottom)}
+  /* Justo encima de la hoja, sea cual sea su altura (la publica en
+     --hoja-aviso); si aún no está montada, sobre la barra de estado. */
+  #toast{bottom:calc(var(--hoja-aviso,74px) + env(safe-area-inset-bottom))}
+
+  /* ── Cabecera y barra de estado, algo más compactas ─────────────────────
+     Se conserva TODO el texto; solo se aprieta el interlineado para devolver
+     espacio al mapa. */
+  #header{padding:6px 10px 7px}
+  #header h1{font-size:15.5px;line-height:1.15}
+  #header .sub{font-size:10px;line-height:1.28}
+  #ci{font-size:13px}
+
+  /* La zona de arrastre no aporta en un teléfono (no hay dónde arrastrar
+     desde), pero sigue siendo el botón de carga: se compacta sin quitar texto. */
+  #dz{padding:12px 10px}
+  #dz .di{font-size:24px}
+}
+
+
 </style>
 </head>
 <body>
@@ -753,7 +1136,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js" integrity="sha384-8D3Rsfo535FqoC1pHCCQMrNf75UgzyoG/HQm9zOzITRrz3QKzecc2E7JXKGCXoWu" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script>
-const APP_VERSION='2026-08-24-tenencia-rfrm-v53';
+const APP_VERSION='2026-08-27-movil-v56';
 window.BTMM_APP_VERSION=APP_VERSION;
 /* ── REGISTRO DE ERRORES EN RUNTIME (sanitizado, solo en memoria) ──
    Captura errores no manejados y rechazos de promesas para diagnóstico.
@@ -6825,6 +7208,188 @@ PI.matchPolygons=function(A, B, opts){
   return best;
 };
 
+/* ── Lectura por CELDAS: reconstrucción de filas y columnas desde las cajas de
+   las palabras del OCR ────────────────────────────────────────────────────────
+   Leer la tabla como texto plano y quedarse con «los dos últimos números» falla
+   en cuanto el OCR intercala un número de más (una cota, un nº de mojón, el
+   ancho de una servidumbre): la fila se desplaza en silencio. Tesseract entrega
+   cada palabra con su caja; agrupando por Y se recuperan los renglones reales y
+   agrupando por X las COLUMNAS, de modo que «Este» y «Norte» se toman de su
+   columna y no de su posición dentro del renglón. */
+
+/* Agrupa palabras {text,bbox:{x0,y0,x1,y1},confidence} en renglones por
+   cercanía vertical. Devuelve renglones ordenados de arriba abajo, con las
+   palabras ordenadas por X. */
+PI.wordsToLines=function(words, opts){
+  opts=opts||{};
+  var ws=[];
+  (words||[]).forEach(function(w){
+    if(!w||!w.bbox)return;
+    var t=String(w.text==null?'':w.text).trim(); if(!t)return;
+    var b=w.bbox; if(!isFinite(b.y0)||!isFinite(b.y1)||!isFinite(b.x0)||!isFinite(b.x1))return;
+    ws.push({text:t,x0:+b.x0,x1:+b.x1,y0:+b.y0,y1:+b.y1,
+      cx:(+b.x0 + +b.x1)/2, cy:(+b.y0 + +b.y1)/2, h:Math.abs(+b.y1 - +b.y0),
+      conf:(w.confidence!=null&&isFinite(w.confidence))?+w.confidence:null});
+  });
+  if(!ws.length)return [];
+  var hs=ws.map(function(w){return w.h;}).sort(function(a,b){return a-b;});
+  var medH=hs[Math.floor(hs.length/2)]||10;
+  var tol=opts.rowTol!=null?opts.rowTol:medH*0.6;
+  ws.sort(function(a,b){return a.cy-b.cy||a.cx-b.cx;});
+  var lines=[],cur=null;
+  ws.forEach(function(w){
+    if(!cur||Math.abs(w.cy-cur.cy)>tol){cur={cy:w.cy,words:[w]};lines.push(cur);}
+    else{cur.words.push(w);cur.cy=(cur.cy*(cur.words.length-1)+w.cy)/cur.words.length;}
+  });
+  lines.forEach(function(l){l.words.sort(function(a,b){return a.x0-b.x0;});});
+  return lines.map(function(l){
+    var c=l.words.filter(function(w){return w.conf!=null;});
+    return {cy:l.cy,words:l.words,
+      text:l.words.map(function(w){return w.text;}).join(' '),
+      conf:c.length?c.reduce(function(s,w){return s+w.conf;},0)/c.length:null};
+  });
+};
+
+/* Detecta las columnas de una tabla a partir de los centros X de las palabras.
+   Devuelve los centros de columna ordenados de izquierda a derecha. La
+   tolerancia se deriva de la altura mediana del texto: dos columnas distintas
+   no se separan por menos de ~1,5 alturas de renglón. */
+PI.detectColumns=function(lines, opts){
+  opts=opts||{};
+  var xs=[],hs=[];
+  (lines||[]).forEach(function(l){l.words.forEach(function(w){xs.push(w.cx);hs.push(w.h);});});
+  if(xs.length<2)return [];
+  hs.sort(function(a,b){return a-b;});
+  var medH=hs[Math.floor(hs.length/2)]||10;
+  var tol=opts.colTol!=null?opts.colTol:medH*1.5;
+  var minCount=opts.minCount!=null?opts.minCount:2;
+  return PI.cluster1D(xs,tol).filter(function(c){return c.n>=minCount;})
+    .map(function(c){return c.pos;}).sort(function(a,b){return a-b;});
+};
+
+/* Convierte las palabras del OCR en filas estructuradas usando las columnas.
+   type='coords'  → {p,e,n}: se eligen las DOS columnas numéricas de mayor
+                    magnitud mediana (Este y Norte son órdenes de magnitud
+                    mayores que un nº de punto o una distancia); Este = la de la
+                    izquierda, Norte = la de la derecha.
+   'rumbo'/'azimut' → {line,dir,dist}: la distancia es la última columna
+                    numérica del renglón y la dirección, todo lo anterior.
+   Devuelve null si la evidencia tabular es insuficiente; entonces se usa el
+   camino de texto plano (piParseOCR) como respaldo. */
+PI.rowsFromWords=function(words, type, opts){
+  opts=opts||{};
+  var lines=PI.wordsToLines(words,opts);
+  if(lines.length<2)return null;
+  var cols=PI.detectColumns(lines,opts);
+  if(cols.length<2)return null;
+  function colOf(w){
+    var best=0,bd=Infinity;
+    for(var i=0;i<cols.length;i++){var d=Math.abs(w.cx-cols[i]);if(d<bd){bd=d;best=i;}}
+    return best;
+  }
+  // Celdas por [renglón][columna]: varias palabras de la misma celda se unen.
+  var grid=lines.map(function(l){
+    var cells=[];for(var i=0;i<cols.length;i++)cells.push({parts:[],conf:[]});
+    l.words.forEach(function(w){var c=colOf(w);cells[c].parts.push(w.text);if(w.conf!=null)cells[c].conf.push(w.conf);});
+    return cells.map(function(c){
+      return {text:c.parts.join(' ').trim(),
+        conf:c.conf.length?c.conf.reduce(function(s,v){return s+v;},0)/c.conf.length:null};
+    });
+  });
+  var rows=[],conf=[];
+  if(type==='coords'){
+    var mags=cols.map(function(_,ci){
+      var v=[];
+      grid.forEach(function(cells){var n=PI.parseCoord(cells[ci].text);if(isFinite(n)&&n!==0)v.push(Math.abs(n));});
+      if(v.length<2)return {ci:ci,med:0,n:v.length};
+      v.sort(function(a,b){return a-b;});
+      return {ci:ci,med:v[Math.floor(v.length/2)],n:v.length};
+    });
+    var big=mags.filter(function(m){return m.n>=2&&m.med>=1000;})
+      .sort(function(a,b){return b.med-a.med;}).slice(0,2)
+      .sort(function(a,b){return a.ci-b.ci;});
+    if(big.length<2)return null;
+    var ce=big[0].ci, cn=big[1].ci, cp=-1;
+    for(var k=0;k<ce;k++){if(mags[k].n>=2){cp=k;break;}}   // columna del nº de punto
+    grid.forEach(function(cells){
+      var e=PI.parseCoord(cells[ce].text), n=PI.parseCoord(cells[cn].text);
+      if(!isFinite(e)||!isFinite(n))return;                 // encabezado o renglón suelto
+      var p=cp>=0?cells[cp].text:'';
+      rows.push({p:String(p).trim()?p:(rows.length+1),e:cells[ce].text,n:cells[cn].text});
+      conf.push({p:100,e:cells[ce].conf!=null?cells[ce].conf:80,n:cells[cn].conf!=null?cells[cn].conf:80});
+    });
+  }else{
+    grid.forEach(function(cells,li){
+      var last=-1;
+      for(var i=cols.length-1;i>=0;i--){var d=PI.parseNumber(cells[i].text);if(isFinite(d)&&d>0){last=i;break;}}
+      if(last<=0)return;
+      var dirTxt=cells.slice(0,last).map(function(c){return c.text;}).join(' ').replace(/\s+/g,' ').trim();
+      if(!PI.parseBearing(dirTxt))return;                   // encabezado o renglón ilegible
+      rows.push({line:rows.length+1,dir:dirTxt,dist:cells[last].text});
+      var cd=lines[li].conf;
+      conf.push({dir:cd!=null?cd:70,dist:cells[last].conf!=null?cells[last].conf:70});
+    });
+  }
+  return rows.length>=3?{rows:rows,conf:conf,columns:cols.length,lines:lines.length,source:'celdas'}:null;
+};
+
+/* Lista blanca de caracteres del OCR según el tipo de extracción. Una única
+   lista estrecha para todo obliga a Tesseract a forzar las letras de los
+   encabezados a dígitos (que contaminan la tabla) y, a la vez, le faltaban G/M/S
+   y las comillas tipográficas que usan muchos derroteros. */
+PI.ocrCharWhitelist=function(type){
+  if(type==='coords')return '0123456789.,+- ';
+  return '0123456789.,°º\'"´`’‘″′NSEWOnsewoGMSgms:+- ';
+};
+
+/* ── Lectura asistida por IA remota ──────────────────────────────────────────
+   Normaliza y VALIDA la respuesta del servicio. Es contenido externo no
+   confiable: se comprueban forma, tipos, tamaño y contenido de cada celda, se
+   recortan los textos y se eliminan caracteres de control; nunca se ejecuta ni
+   se inserta como HTML. Devuelve {rows, conf, notes, warnings} para la tabla
+   editable — nunca para aceptarse sin revisión humana. */
+PI.sanitizeAIRows=function(payload, type, opts){
+  opts=opts||{};
+  var MAXROWS=opts.maxRows||400, MAXLEN=opts.maxCell||64;
+  var warnings=[];
+  if(!payload||typeof payload!=='object')
+    return {rows:[],conf:[],notes:'',warnings:['respuesta vacía o no interpretable']};
+  var src=Array.isArray(payload.rows)?payload.rows:(Array.isArray(payload.filas)?payload.filas:null);
+  if(!src)return {rows:[],conf:[],notes:'',warnings:['la respuesta no trae una lista de filas']};
+  if(src.length>MAXROWS){warnings.push('se recortó a '+MAXROWS+' filas (llegaron '+src.length+')');src=src.slice(0,MAXROWS);}
+  function clean(v){
+    if(v==null)return '';
+    if(typeof v==='number')return isFinite(v)?String(v):'';
+    if(typeof v!=='string')return '';
+    var s=v.replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim();
+    return s.length>MAXLEN?s.slice(0,MAXLEN):s;
+  }
+  function conf1(v){var n=(v==null)?NaN:+v;return isFinite(n)?Math.max(0,Math.min(100,n)):70;}
+  var rows=[],conf=[],descartadas=0;
+  src.forEach(function(r){
+    if(!r||typeof r!=='object'||Array.isArray(r)){descartadas++;return;}
+    var c=conf1(r.conf!=null?r.conf:r.confianza);
+    if(type==='coords'){
+      var e=clean(r.e!=null?r.e:(r.este!=null?r.este:r.x));
+      var n=clean(r.n!=null?r.n:(r.norte!=null?r.norte:r.y));
+      if(!isFinite(PI.parseCoord(e))||!isFinite(PI.parseCoord(n))){descartadas++;return;}
+      var p=clean(r.p!=null?r.p:(r.punto!=null?r.punto:''));
+      rows.push({p:p||(rows.length+1),e:e,n:n});
+      conf.push({p:100,e:c,n:c});
+    }else{
+      var dir=clean(r.dir!=null?r.dir:(r.rumbo!=null?r.rumbo:(r.azimut!=null?r.azimut:r.direccion)));
+      var dist=clean(r.dist!=null?r.dist:(r.distancia!=null?r.distancia:r.d));
+      if(!dir&&!dist){descartadas++;return;}
+      rows.push({line:rows.length+1,dir:dir,dist:dist});
+      conf.push({dir:c,dist:c});
+    }
+  });
+  if(descartadas)warnings.push(descartadas+' fila(s) sin datos utilizables se descartaron');
+  var notes=payload.notas!=null?payload.notas:(payload.notes!=null?payload.notes:'');
+  notes=(typeof notes==='string'?notes:'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,400);
+  return {rows:rows,conf:conf,notes:notes,warnings:warnings};
+};
+
 // Exporta al ámbito (window.PI en el navegador; module.exports en Node de prueba).
 root.PI=PI;
 if(typeof module!=='undefined'&&module.exports)module.exports=PI;
@@ -6839,6 +7404,10 @@ if(typeof module!=='undefined'&&module.exports)module.exports=PI;
    bloque PI (arriba). OCR con Tesseract.js cargado bajo demanda en un Web Worker.
    ══════════════════════════════════════════════════════════════════════════ */
 var PLANO_MAX_MB=40, PLANO_MAX_DIM=2600;
+/* Lado largo objetivo del recorte que se entrega al OCR (px). Tesseract pide
+   ~30 px de altura de texto; por debajo de eso el error por carácter sube
+   deprisa en tablas de coordenadas. */
+var PLANO_OCR_TARGET_PX=2200;
 S.plano=null;
 
 function piEsc(v){return htmlEsc(v);}
@@ -6885,7 +7454,84 @@ function piInjectStyle(){
    '.pi-tool{background:#12294d;border:1px solid #2c4a7c;color:#dfe9f7;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:12px}',
    '#pi-map{height:340px;border:1px solid #24406e;border-radius:6px;margin-top:8px}',
    '.pi-prog{height:6px;background:#0c1f3d;border-radius:4px;overflow:hidden;flex:1;max-width:220px}',
-   '.pi-prog i{display:block;height:100%;width:0;background:#4a7cc4;transition:width .2s}'
+   '.pi-prog i{display:block;height:100%;width:0;background:#4a7cc4;transition:width .2s}',
+
+   /* ── Capa de refinamiento visual del asistente ──────────────────────────
+      Mismo criterio que la hoja principal: solo forma, profundidad, tipografía
+      y movimiento; ni un color nuevo. El asistente pasa de ser una capa que
+      cubre la pantalla a una LÁMINA que flota sobre el visor — que es lo que
+      realmente es: una mesa de trabajo temporal sobre el mapa. */
+   '#pi-wiz{-webkit-backdrop-filter:blur(7px) saturate(.92);backdrop-filter:blur(7px) saturate(.92);padding:14px}',
+   '.pi-shell{height:calc(100% - 28px);max-height:calc(100vh - 28px);border-radius:var(--r-lg);overflow:hidden;border:1px solid #24406e;box-shadow:var(--e-4)}',
+   /* ── Móvil ──────────────────────────────────────────────────────────────
+      Medido en 390x844 y 360x740. La cabecera del asistente ocupaba 241 px de
+      740 —un tercio de la pantalla— porque los diez pasos se apilaban en
+      columna. Ahora el título y «Cancelar» comparten línea y el riel va en una
+      sola fila desplazable. Las celdas de la tabla crecen porque es la pantalla
+      donde más se teclea del asistente. */
+   '@media(max-width:900px){',
+   '  #pi-wiz{padding:0}',
+   '  .pi-shell{height:100%;max-height:100dvh;border-radius:0;border-left:none;border-right:none}',
+   '  .pi-head{flex-wrap:wrap;padding:10px 12px;gap:8px}',
+   '  .pi-head b{flex:1 1 auto;font-size:14px}',
+   '  .pi-x{order:2;flex:0 0 auto;min-height:44px}',
+   '  .pi-steps{order:3;flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;gap:5px;padding-bottom:2px;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,rgba(0,0,0,1) calc(100% - 22px),transparent 100%);mask-image:linear-gradient(90deg,rgba(0,0,0,1) calc(100% - 22px),transparent 100%)}',
+   '  .pi-steps::-webkit-scrollbar{display:none}',
+   '  .pi-steps span{flex:0 0 auto;padding:6px 11px;font-size:12px;scroll-margin:0 22px}',
+   '  .pi-body{padding:12px}',
+   '  .pi-foot{padding:10px 12px;gap:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}',
+   '  .pi-btn{min-height:46px;padding:11px 16px;font-size:13.5px}',
+   '  .pi-tool{min-height:42px;padding:10px 13px;font-size:12.5px}',
+   '  .pi-note{font-size:12.5px;line-height:1.55}',
+   '  .pi-in{font-size:16px;min-height:44px}',
+   '  .pi-chip{padding:6px 11px;font-size:12px}',
+   '  .pi-table{font-size:14px}',
+   '  .pi-table th,.pi-table td{padding:10px 6px}',
+   '  .pi-table td[contenteditable]{min-width:92px;min-height:46px}',
+   '  .pi-canvas-wrap{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch}',
+   '  #pi-map{height:260px}',
+   '}',
+   '.pi-head{box-shadow:var(--hl);position:relative}',
+   /* Reflejo sobre el filete inferior, igual que en la cabecera del visor. */
+   '.pi-head::after{content:\'\';position:absolute;left:0;right:0;bottom:-1px;height:1px;pointer-events:none;opacity:.45;mix-blend-mode:screen;background:linear-gradient(90deg,rgba(217,177,74,0),rgba(255,251,233,.75) 30%,rgba(217,177,74,.18) 50%,rgba(255,251,233,.75) 70%,rgba(217,177,74,0))}',
+   /* Riel de pasos: los ya recorridos llevan una marca, el actual un halo. Así
+      el avance se lee de un vistazo sin contar los números. */
+   '.pi-steps span{border-radius:var(--r-pill);transition:background-color var(--dur-2) var(--ease),color var(--dur-2) var(--ease),border-color var(--dur-2) var(--ease),box-shadow var(--dur-2) var(--ease)}',
+   '.pi-steps span.on{box-shadow:0 0 0 3px rgba(74,124,196,.24),var(--e-1)}',
+   '.pi-steps span.done::before{content:\'\\2713\';margin-right:4px;font-weight:700}',
+   '.pi-x{border-radius:var(--r-sm);box-shadow:var(--hl);transition:background-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease)}',
+   '.pi-x:hover{transform:translateY(-1px);border-color:#4a7cc4}',
+   '.pi-body{scrollbar-gutter:stable}',
+   /* El pie se separa del contenido con una sombra ascendente: indica que la
+      lista de arriba sigue desplazándose por debajo. */
+   '.pi-foot{box-shadow:0 -10px 24px -18px rgba(0,0,0,.95),var(--hl)}',
+   '.pi-btn{border-radius:var(--r-sm);box-shadow:var(--hl);transition:background-color var(--dur-2) var(--ease),transform var(--dur-1) var(--ease),box-shadow var(--dur-2) var(--ease),filter var(--dur-2) var(--ease)}',
+   '.pi-btn:not(:disabled):hover{transform:translateY(-1px);box-shadow:var(--hl),var(--e-2);filter:brightness(1.08)}',
+   '.pi-btn:not(:disabled):active{transform:translateY(0)}',
+   '.pi-tool{border-radius:var(--r-sm);box-shadow:var(--hl);transition:background-color var(--dur-1) var(--ease),transform var(--dur-1) var(--ease),filter var(--dur-1) var(--ease)}',
+   '.pi-tool:not(:disabled):hover{transform:translateY(-1px);filter:brightness(1.12)}',
+   /* Los avisos ganan una banda de acento a la izquierda: se distingue de un
+      vistazo un dato correcto de una advertencia sin leer el texto entero. */
+   '.pi-note{border-radius:var(--r-sm);border-left-width:3px;box-shadow:var(--hl)}',
+   '.pi-canvas-wrap{border-radius:var(--r-sm);overflow:hidden;box-shadow:var(--e-2)}',
+   '.pi-sel{border-radius:3px;box-shadow:0 0 0 9999px rgba(4,10,24,.34)}',
+   '.pi-in{border-radius:var(--r-sm);transition:border-color var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}',
+   '.pi-in:focus{border-color:#4a7cc4}',
+   '.pi-chip{border-radius:var(--r-pill);box-shadow:var(--hl)}',
+   /* Tabla de transcripción: cifras tabulares (columnas alineadas dígito con
+      dígito), realce de la fila bajo el cursor y anillo de foco en la celda que
+      se está editando — es la pantalla donde más se teclea del asistente. */
+   '.pi-table{font-variant-numeric:tabular-nums}',
+   '.pi-table th{box-shadow:inset 0 0 0 1px #24406e;z-index:2}',
+   '.pi-table tbody tr:hover td{filter:brightness(1.14)}',
+   '.pi-table td[contenteditable]{border-radius:2px;transition:box-shadow var(--dur-1) var(--ease)}',
+   '.pi-table td[contenteditable]:focus-visible{outline:2px solid #4a7cc4!important;outline-offset:-2px;box-shadow:none!important}',
+   '.pi-prog{border-radius:var(--r-pill);box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}',
+   '.pi-prog i{border-radius:var(--r-pill);position:relative;overflow:hidden}',
+   '.pi-prog i::after{content:\'\';position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.34) 50%,rgba(255,255,255,0));background-size:180% 100%;animation:piBrillo 1.4s linear infinite}',
+   '@keyframes piBrillo{from{background-position:180% 0}to{background-position:-80% 0}}',
+   '#pi-map{border-radius:var(--r-sm);box-shadow:var(--e-2)}',
+   '@media(prefers-reduced-motion:reduce){.pi-prog i::after{animation:none}.pi-btn:not(:disabled):hover,.pi-tool:not(:disabled):hover,.pi-x:hover{transform:none}}'
   ].join('\n');
   document.head.appendChild(st);
 }
@@ -6899,7 +7545,8 @@ function piNewState(){
     adjust:{dx:0,dy:0,rot:0},adjHist:[],map:null,mapLayer:null,worker:null,
     planoAreaHa:null,build:null,locMethod:'coords',anchor:null,gridPts:[],cancelOCR:false,
     located:false,crsConfirmed:false,gridCrs:'EPSG:5367',gridPredioPx:null,shapeVerdict:null,
-    pdfTextLines:null,pdfNative:false,gridDetected:null,tracePx:null,traceSeed:null,traceOpts:null};
+    pdfTextLines:null,pdfNative:false,gridDetected:null,tracePx:null,traceSeed:null,traceOpts:null,
+    ocrSource:'',aiUsed:false,aiModel:null,aiNotes:'',aiWarnings:[]};
 }
 
 function openPlanoImport(){
@@ -7167,12 +7814,21 @@ function piCropClear(){S.plano.crop=null;piMountPreview();}
 /* Arrastre de un rectángulo sobre un canvas mostrado; devuelve rect en coords fuente. */
 function piBindDrag(wrap,disp,onRect){
   var st=S.plano, start=null;
-  function pos(ev){var r=disp.getBoundingClientRect();var cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-r.left;var cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-r.top;return {x:Math.max(0,Math.min(disp.width,cx)),y:Math.max(0,Math.min(disp.height,cy))};}
+  function punto(ev){
+    if(ev.touches&&ev.touches.length)return ev.touches[0];
+    if(ev.changedTouches&&ev.changedTouches.length)return ev.changedTouches[0];   // touchend
+    return ev;
+  }
+  function pos(ev){var r=disp.getBoundingClientRect(),p=punto(ev);var cx=p.clientX-r.left,cy=p.clientY-r.top;return {x:Math.max(0,Math.min(disp.width,cx)),y:Math.max(0,Math.min(disp.height,cy))};}
   function down(ev){ev.preventDefault();start=pos(ev);var old=document.getElementById('pi-drawbox');if(old)old.remove();}
   function move(ev){if(!start)return;var p=pos(ev);var box=document.getElementById('pi-drawbox');if(!box){box=document.createElement('div');box.className='pi-sel';box.id='pi-drawbox';wrap.appendChild(box);}box.style.left=Math.min(start.x,p.x)+'px';box.style.top=Math.min(start.y,p.y)+'px';box.style.width=Math.abs(p.x-start.x)+'px';box.style.height=Math.abs(p.y-start.y)+'px';}
   function up(ev){if(!start)return;var p=pos(ev);var sc=st.dispScale||1;var rx=Math.min(start.x,p.x)/sc,ry=Math.min(start.y,p.y)/sc,rw=Math.abs(p.x-start.x)/sc,rh=Math.abs(p.y-start.y)/sc;start=null;if(rw>8&&rh>8)onRect({x:rx,y:ry,w:rw,h:rh});}
+  disp.style.touchAction='none';   // el arrastre selecciona, no desplaza la página
   disp.onmousedown=down;disp.onmousemove=move;window.addEventListener('mouseup',up);
-  disp.ontouchstart=down;disp.ontouchmove=move;disp.ontouchend=up;
+  disp.addEventListener('touchstart',down,{passive:false});
+  disp.addEventListener('touchmove',move,{passive:false});
+  disp.addEventListener('touchend',up);
+  disp.addEventListener('touchcancel',function(){start=null;var b=document.getElementById('pi-drawbox');if(b)b.remove();});
 }
 
 /* ── PASO: Tipo de extracción ── */
@@ -7211,23 +7867,47 @@ function piMountRegion(){
 }
 function piRegionAll(){var b=piWorkingCanvas();S.plano.region={x:0,y:0,w:b.width,h:b.height};piMountRegion();}
 
-/* Canvas del recuadro a OCR, preprocesado (gris + contraste + binarización). */
-function piRegionCanvas(preprocess){
+/* Canvas del recuadro a OCR.
+   `preprocess` aplica gris + binarización LOCAL (media por ventana con sesgo,
+   estilo Bradley/Sauvola). Un umbral Otsu GLOBAL —lo que había antes— pierde
+   media tabla en cuanto el escaneo tiene sombra, gradiente o papel amarillento,
+   que es el caso normal de un plano catastrado fotocopiado; el umbral local se
+   adapta a cada zona. El sobremuestreo apunta a ~2200 px de lado largo porque
+   Tesseract necesita una altura de texto de ~30 px: con el objetivo anterior
+   (1400 px, factor máximo 2) las cifras de una tabla quedaban en 10-12 px y el
+   error por carácter se disparaba. Sin `preprocess` devuelve el recorte en color
+   (lo que conviene enviar a la lectura asistida por IA: los modelos de visión
+   leen mejor la imagen original que una binarizada). */
+function piRegionCanvas(preprocess,opts){
+  opts=opts||{};
   var st=S.plano, base=piWorkingCanvas();
   var r=st.region||{x:0,y:0,w:base.width,h:base.height};
-  var up=Math.min(2,Math.max(1,1400/Math.max(r.w,r.h)));   // sobremuestreo suave
+  var target=opts.maxDim||PLANO_OCR_TARGET_PX;
+  var up=Math.min(4,Math.max(1,target/Math.max(r.w,r.h)));
   var c=document.createElement('canvas');c.width=Math.round(r.w*up);c.height=Math.round(r.h*up);
   var ctx=c.getContext('2d',{willReadFrequently:true});
+  ctx.imageSmoothingEnabled=true;if('imageSmoothingQuality' in ctx)ctx.imageSmoothingQuality='high';
   ctx.drawImage(base,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
   if(preprocess){
-    var im=ctx.getImageData(0,0,c.width,c.height),d=im.data;
-    // gris + aumento de contraste + umbral Otsu simple
-    var hist=new Array(256).fill(0);
-    for(var i=0;i<d.length;i+=4){var g=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)|0;d[i]=d[i+1]=d[i+2]=g;hist[g]++;}
-    var total=c.width*c.height,sum=0;for(var k=0;k<256;k++)sum+=k*hist[k];
-    var sumB=0,wB=0,mx=0,thr=128;
-    for(var tt=0;tt<256;tt++){wB+=hist[tt];if(!wB)continue;var wF=total-wB;if(!wF)break;sumB+=tt*hist[tt];var mB=sumB/wB,mF=(sum-sumB)/wF,between=wB*wF*(mB-mF)*(mB-mF);if(between>mx){mx=between;thr=tt;}}
-    for(var j=0;j<d.length;j+=4){var v=d[j]>thr?255:0;d[j]=d[j+1]=d[j+2]=v;}
+    var W=c.width,H=c.height,im=ctx.getImageData(0,0,W,H),d=im.data,N=W*H;
+    var gray=new Uint8Array(N);
+    for(var i=0;i<N;i++){var j=i*4;gray[i]=(d[j]*0.299+d[j+1]*0.587+d[j+2]*0.114)|0;}
+    // Imagen integral → media en ventana en O(1) por píxel.
+    var ii=new Float64Array((W+1)*(H+1));
+    for(var y=0;y<H;y++){var rowAcc=0;
+      for(var x=0;x<W;x++){rowAcc+=gray[y*W+x];ii[(y+1)*(W+1)+(x+1)]=ii[y*(W+1)+(x+1)]+rowAcc;}}
+    var win=Math.max(15,Math.round(Math.min(W,H)/24))|1, rad=win>>1;
+    var bias=opts.bias!=null?opts.bias:0.86;   // píxel = tinta si < 86 % de la media local
+    for(var y2=0;y2<H;y2++){
+      var y0=Math.max(0,y2-rad), y1=Math.min(H-1,y2+rad);
+      for(var x2=0;x2<W;x2++){
+        var x0=Math.max(0,x2-rad), x1=Math.min(W-1,x2+rad);
+        var area=(x1-x0+1)*(y1-y0+1);
+        var s=ii[(y1+1)*(W+1)+(x1+1)]-ii[y0*(W+1)+(x1+1)]-ii[(y1+1)*(W+1)+x0]+ii[y0*(W+1)+x0];
+        var v=gray[y2*W+x2] < (s/area)*bias ? 0 : 255;
+        var k=(y2*W+x2)*4; d[k]=d[k+1]=d[k+2]=v; d[k+3]=255;
+      }
+    }
     ctx.putImageData(im,0,0);
   }
   return c;
@@ -7239,24 +7919,28 @@ function piRenderOCR(body){
   var nativa=(st.kind==='pdf'&&st.pdfTextLines&&st.pdfTextLines.length)?
     '<div class="pi-note pi-ok">Este PDF tiene <b>texto seleccionable</b> ('+st.pdfTextLines.length+' líneas): puede extraerlo <b>sin OCR</b> (más exacto).</div>'+
     '<div class="pi-row"><button class="pi-btn prim" onclick="piUsePdfText()">📄 Usar texto del PDF (sin OCR)</button></div>':'';
+  var ia=piAIDisponible()?
+    '<button class="pi-btn" id="pi-ai-run" onclick="piRunAI()">🤖 Leer con IA (envía el recuadro)</button>':'';
   body.innerHTML=nativa+'<div class="pi-note">Ejecute el OCR sobre el recuadro, o transcriba a mano si el texto es manuscrito o de baja calidad.</div>'+
     '<div class="pi-row">'+
-    '<button class="pi-btn'+(nativa?'':' prim')+'" id="pi-ocr-run" onclick="piRunOCR()">🔎 Ejecutar OCR</button>'+
+    '<button class="pi-btn'+(nativa?'':' prim')+'" id="pi-ocr-run" onclick="piRunOCR()">🔎 Ejecutar OCR (local)</button>'+
+    ia+
     '<button class="pi-btn" onclick="piSkipOCR()">✍️ Transcribir a mano</button>'+
     '<button class="pi-btn" id="pi-ocr-cancel" style="display:none" onclick="S.plano.cancelOCR=true">Detener</button></div>'+
     '<div id="pi-ocr-msg" style="font-size:12px;color:#9db4d6;margin-top:6px"></div>'+
+    (ia?'<div class="pi-note">El <b>OCR local</b> no envía nada fuera de su equipo y suele bastar con una tabla impresa nítida. La <b>lectura con IA</b> interpreta el recuadro como tabla (encabezados, columnas, unidades) y ayuda con planos fotocopiados, sellados o manuscritos, pero requiere enviar ese recorte.</div>'+piAIAviso():'')+
     '<div class="pi-canvas-wrap" id="pi-ocr-prev" style="margin-top:8px;max-height:260px;overflow:auto"></div>';
   var prev=document.getElementById('pi-ocr-prev');
   var c=piRegionCanvas(true);var sc=Math.min(1,900/c.width);var d=document.createElement('canvas');d.width=c.width*sc;d.height=c.height*sc;d.getContext('2d').drawImage(c,0,0,d.width,d.height);prev.appendChild(d);
   document.getElementById('pi-next').style.display='none';
 }
-function piSkipOCR(){var st=S.plano;st.ocrText='';st.pdfNative=false;st.rows=piEmptyRows(st.extractType);st.confRows=[];piGoStep('table');}
+function piSkipOCR(){var st=S.plano;st.ocrText='';st.pdfNative=false;st.ocrSource='manual';st.aiUsed=false;st.aiModel=null;st.aiNotes='';st.rows=piEmptyRows(st.extractType);st.confRows=[];piGoStep('table');}
 /* Usa el texto nativo del PDF (sin OCR): más exacto en planos digitales. */
 function piUsePdfText(){
   var st=S.plano;
   var text=(st.pdfTextLines||[]).join('\n');
   if(!text.trim()){piToast('El PDF no tiene texto utilizable; use OCR.',true,3500);return;}
-  st.ocrText=text;st.pdfNative=true;
+  st.ocrText=text;st.pdfNative=true;st.ocrSource='pdf-nativo';st.aiUsed=false;st.aiModel=null;st.aiNotes='';
   var parsed=piParseOCR(text,st.extractType,null);
   st.rows=parsed.rows;
   st.confRows=parsed.rows.map(function(){return st.extractType==='coords'?{p:100,e:99,n:99}:{dir:99,dist:99};});
@@ -7284,16 +7968,35 @@ async function piRunOCR(){
       logger:function(m){if(m.status&&m.progress!=null){piProg(true,m.progress);msg.textContent=m.status+' '+Math.round(m.progress*100)+'%';}}
     });
     st.worker=worker;
-    await worker.setParameters({tessedit_char_whitelist:'0123456789.,°\'"NSEWO nsewo-+ '});
+    /* PSM 6 = «un bloque uniforme de texto»: el recuadro ya está acotado a la
+       tabla, así que el análisis de página completa (PSM 3, el de por defecto)
+       solo consigue mezclar columnas o partir renglones. La lista blanca es por
+       tipo de extracción (PI.ocrCharWhitelist): una lista única y estrecha
+       forzaba las letras de los encabezados a dígitos y a la vez dejaba fuera
+       G/M/S y las comillas tipográficas de los derroteros. */
+    await worker.setParameters({
+      tessedit_char_whitelist:PI.ocrCharWhitelist(st.extractType),
+      tessedit_pageseg_mode:'6',
+      preserve_interword_spaces:'1',
+      user_defined_dpi:'300'
+    });
     if(st.cancelOCR){piReleaseOCR();msg.textContent='OCR detenido.';piProg(false);runBtn.disabled=false;cancelBtn.style.display='none';return;}
     var canvas=piRegionCanvas(true);
     var res=await worker.recognize(canvas);
     piReleaseOCR();
     st.ocrText=res.data.text||'';
-    var conf=(res.data.words||[]).length?res.data.words:[];
-    st.parsed=piParseOCR(st.ocrText,st.extractType,res.data);
+    /* Primero se intenta la lectura por CELDAS (cajas de las palabras): así
+       «Este» y «Norte» salen de su columna y un número intercalado no desplaza
+       la fila entera. Si la tabla no se reconstruye, se cae al texto plano. */
+    var byCells=null;
+    try{ byCells=PI.rowsFromWords(res.data.words||[],st.extractType); }
+    catch(err){ console.warn('lectura por celdas:',err); }
+    if(byCells){ st.parsed=byCells; st.ocrSource='celdas'; }
+    else { st.parsed=piParseOCR(st.ocrText,st.extractType,res.data); st.ocrSource='texto'; }
     st.rows=st.parsed.rows;st.confRows=st.parsed.conf;
-    piProg(false);msg.textContent='OCR terminado. Revise y corrija en la tabla.';
+    st.aiUsed=false;st.aiModel=null;st.aiNotes='';
+    piProg(false);
+    msg.textContent='OCR terminado ('+(byCells?('tabla reconstruida: '+byCells.columns+' columnas, '+st.rows.length+' filas'):'lectura por líneas')+'). Revise y corrija en la tabla.';
     piGoStep('table');
   }catch(e){
     piReleaseOCR();piProg(false);
@@ -7302,6 +8005,122 @@ async function piRunOCR(){
     console.error(e);
   }
 }
+/* ══════════════════════════════════════════════════════════════════════════
+   LECTURA ASISTIDA POR IA (opcional, remota, bajo consentimiento explícito)
+   ──────────────────────────────────────────────────────────────────────────
+   El OCR local (Tesseract) resuelve bien una tabla impresa y limpia, pero se
+   queda corto en planos fotocopiados, con sellos encima, con la tabla girada o
+   con cifras manuscritas. Para esos casos se puede pedir la lectura a un modelo
+   de visión, que interpreta la tabla como tal (encabezados, columnas, unidades)
+   en vez de reconocer glifos sueltos.
+
+   Reglas del canal, en este orden de importancia:
+
+   1. NO es el camino por defecto y NO se usa nunca sin que la persona lo pida.
+      El asistente sigue funcionando entero sin red y sin IA.
+   2. Sale del navegador ÚNICAMENTE el recuadro que la persona marcó en el paso
+      «Recuadro a leer» (la tabla o el derrotero), nunca la lámina completa: así
+      no viajan el nombre del propietario, la cédula ni el número de plano.
+   3. La llamada va al Worker propio (psforgis-ocg), que es quien guarda la clave
+      del proveedor. El visor sigue sin secretos: aquí no hay ninguna clave.
+   4. La respuesta es contenido externo NO CONFIABLE: se valida con
+      PI.sanitizeAIRows (forma, tipos, tamaño, caracteres) y se escapa al
+      mostrarla. Nunca se acepta sola: siempre desemboca en la tabla editable
+      con confirmación humana, igual que el OCR local.
+   5. Queda registrado en la procedencia del polígono (fuenteTexto 'ia-remota',
+      modelo y qué se envió), de modo que el informe diga cómo se leyó el plano.
+   ══════════════════════════════════════════════════════════════════════════ */
+var PI_AI_ENDPOINT='https://psforgis-ocg.psforestal.workers.dev/ia-plano';
+var PI_AI_MAX_PX=1600;          // lado largo del recorte que se envía
+var PI_AI_TIMEOUT_MS=60000;
+var PI_AI_CONSENT_KEY='btmm-ia-plano-consentimiento';
+
+/* ¿Tiene sentido ofrecer la IA? Requiere red (en file:// no hay CDN ni Worker). */
+function piAIDisponible(){
+  return location.protocol==='http:'||location.protocol==='https:';
+}
+function piAIConsentido(){
+  try{ return sessionStorage.getItem(PI_AI_CONSENT_KEY)==='1'; }catch(e){ return false; }
+}
+function piAIGuardarConsentimiento(){
+  try{ sessionStorage.setItem(PI_AI_CONSENT_KEY,'1'); }catch(e){}
+}
+
+/* Recorte que se envía: el recuadro marcado, en color y a resolución moderada
+   (los modelos de visión leen mejor el original que una imagen binarizada). */
+function piAICanvas(){
+  return piRegionCanvas(false,{maxDim:PI_AI_MAX_PX});
+}
+
+function piAIAviso(){
+  var st=S.plano;
+  var r=st.region;
+  var dim=r?(Math.round(r.w)+'×'+Math.round(r.h)+' px'):'toda la imagen';
+  return '<div class="pi-note pi-warn"><b>Esto envía datos fuera de su equipo.</b> '+
+    'Se enviará <b>únicamente el recuadro marcado</b> ('+piEsc(dim)+') al servicio de IA, '+
+    'a través del Worker de PSF; no se envía la lámina completa, ni el nombre del propietario, '+
+    'ni la cédula, ni el número de plano, salvo que estén dentro del recuadro que usted marcó. '+
+    'Si el plano es confidencial, use el OCR local o la transcripción a mano.</div>';
+}
+
+/* Pide la lectura al Worker y deja el resultado en la tabla editable. */
+async function piRunAI(){
+  var st=S.plano;
+  if(!piAIDisponible()){piToast('La lectura con IA necesita conexión (no funciona abriendo el archivo directamente).',true,5000);return;}
+  if(!piAIConsentido()){
+    if(!confirm('Se enviará el recuadro marcado del plano a un servicio de IA externo (a través del Worker de PSF) para interpretarlo.\n\n'+
+      'No se envía la lámina completa. El resultado siempre pasa por la tabla editable y su confirmación.\n\n¿Continuar?'))return;
+    piAIGuardarConsentimiento();
+  }
+  var btn=document.getElementById('pi-ai-run'), msg=document.getElementById('pi-ocr-msg');
+  if(btn)btn.disabled=true;
+  piProg(true,0.15);
+  if(msg)msg.textContent='Enviando el recuadro al servicio de IA…';
+  var ctl=(typeof AbortController!=='undefined')?new AbortController():null;
+  var timer=setTimeout(function(){if(ctl)ctl.abort();},PI_AI_TIMEOUT_MS);
+  try{
+    var canvas=piAICanvas();
+    var dataUrl=canvas.toDataURL('image/png');
+    var b64=dataUrl.slice(dataUrl.indexOf(',')+1);
+    piProg(true,0.45);
+    if(msg)msg.textContent='La IA está interpretando el recuadro…';
+    var resp=await fetch(PI_AI_ENDPOINT,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tipo:st.extractType,formato:'image/png',imagen:b64,version:APP_VERSION}),
+      signal:ctl?ctl.signal:undefined
+    });
+    clearTimeout(timer);
+    if(!resp.ok){
+      var det='';
+      try{ var je=await resp.json(); det=je&&(je.error||je.mensaje)?(': '+String(je.error||je.mensaje).slice(0,160)):''; }catch(e){}
+      throw new Error('el servicio respondió '+resp.status+det);
+    }
+    var payload=await resp.json();
+    piProg(true,0.85);
+    var clean=PI.sanitizeAIRows(payload,st.extractType);
+    if(!clean.rows.length)throw new Error('la IA no devolvió filas utilizables'+(clean.warnings.length?' ('+clean.warnings[0]+')':''));
+    st.rows=clean.rows;st.confRows=clean.conf;
+    st.ocrText=(payload&&typeof payload.texto==='string')?payload.texto.slice(0,20000):'';
+    st.pdfNative=false;st.ocrSource='ia';
+    st.aiUsed=true;
+    st.aiModel=(payload&&typeof payload.modelo==='string')?payload.modelo.replace(/[^\w.:@\/-]/g,'').slice(0,80):'desconocido';
+    st.aiNotes=clean.notes;
+    st.aiWarnings=clean.warnings;
+    piProg(false);
+    if(msg)msg.textContent='Lectura con IA terminada ('+clean.rows.length+' filas). Verifique CADA valor contra el plano.';
+    piToast('Lectura con IA incorporada. Verifique cada valor contra el plano antes de continuar.',false,5000);
+    piGoStep('table');
+  }catch(e){
+    clearTimeout(timer);
+    piProg(false);
+    var m=(e&&e.name==='AbortError')?'el servicio tardó demasiado':(e&&e.message?e.message:'error desconocido');
+    if(msg)msg.innerHTML='<span style="color:#ffc9c9">No se pudo leer con IA ('+piEsc(m)+'). Use el OCR local o transcriba a mano.</span>';
+    if(btn)btn.disabled=false;
+    console.error(e);
+  }
+}
+
 function piReleaseOCR(){var st=S.plano;if(st&&st.worker){try{st.worker.terminate();}catch(e){}st.worker=null;}}
 function piProg(show,frac){var w=document.getElementById('pi-progwrap'),b=document.getElementById('pi-prog');if(!w)return;w.style.display=show?'block':'none';if(b)b.style.width=Math.round((frac||0)*100)+'%';}
 
@@ -7309,8 +8128,15 @@ function piProg(show,frac){var w=document.getElementById('pi-progwrap'),b=docume
 function piParseOCR(text,type,data){
   var lines=(text||'').split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean);
   var rows=[],conf=[];
-  var wordsByLine={};
-  if(data&&data.lines){data.lines.forEach(function(l,i){wordsByLine[i]=(l.confidence!=null?l.confidence:100);});}
+  /* Confianza por renglón. `lines` viene del texto ya filtrado (sin renglones
+     vacíos), así que indexar data.lines por ese índice desalineaba las
+     confianzas: se emparejan por el TEXTO del renglón. */
+  var confByText={};
+  if(data&&data.lines){data.lines.forEach(function(l){
+    var k=String(l.text==null?'':l.text).replace(/\s+/g,' ').trim();
+    if(k&&confByText[k]==null)confByText[k]=(l.confidence!=null?l.confidence:100);
+  });}
+  function lineConf(ln,dflt){var v=confByText[String(ln).replace(/\s+/g,' ').trim()];return v!=null?v:dflt;}
   if(type==='coords'){
     var p=0;
     lines.forEach(function(ln,i){
@@ -7323,7 +8149,8 @@ function piParseOCR(text,type,data){
       if(vals.length>=3){pt=vals[0];e=vals[vals.length-2];n=vals[vals.length-1];}
       else{pt=++p;e=vals[0];n=vals[1];}
       rows.push({p:pt,e:e,n:n});
-      conf.push({p:100,e:wordsByLine[i]||80,n:wordsByLine[i]||80});
+      var ce=lineConf(ln,80);
+      conf.push({p:100,e:ce,n:ce});
     });
   }else{
     lines.forEach(function(ln,i){
@@ -7332,7 +8159,8 @@ function piParseOCR(text,type,data){
       var b=PI.parseBearing(leg.dir);
       if(!b&&!isFinite(leg.dist))return;
       rows.push({line:rows.length+1,dir:leg.dir,dist:isFinite(leg.dist)?leg.dist:''});
-      conf.push({dir:wordsByLine[i]||70,dist:wordsByLine[i]||70});
+      var cl=lineConf(ln,70);
+      conf.push({dir:cl,dist:cl});
     });
   }
   if(!rows.length)rows=piEmptyRows(type);
@@ -7345,7 +8173,14 @@ function piRenderTable(body){
   var isC=st.extractType==='coords';
   var head=isC?'<tr><th>Punto</th><th>Este / X</th><th>Norte / Y</th><th></th></tr>':
     '<tr><th>Línea</th><th>'+(st.extractType==='rumbo'?'Rumbo':'Azimut')+'</th><th>Distancia</th><th></th></tr>';
-  body.innerHTML='<div class="pi-note">Revise y corrija cada celda. Las celdas resaltadas indican baja confianza o valores dudosos. Puede agregar o eliminar filas.</div>'+
+  var avisoIA=st.aiUsed?
+    '<div class="pi-note pi-warn"><b>Lectura hecha por IA remota</b>'+(st.aiModel?' ('+piEsc(st.aiModel)+')':'')+
+    '. Un modelo puede inventar cifras plausibles: <b>verifique vértice por vértice contra el plano</b> antes de continuar. '+
+    'El área calculada y el error de cierre del paso siguiente son la comprobación cruzada más útil.'+
+    (st.aiNotes?'<div style="margin-top:4px">Observaciones del modelo: '+piEsc(st.aiNotes)+'</div>':'')+
+    ((st.aiWarnings&&st.aiWarnings.length)?'<div style="margin-top:4px">⚠ '+piEsc(st.aiWarnings.join('; '))+'</div>':'')+
+    '</div>':'';
+  body.innerHTML=avisoIA+'<div class="pi-note">Revise y corrija cada celda. Las celdas resaltadas indican baja confianza o valores dudosos. Puede agregar o eliminar filas.</div>'+
     '<div class="pi-row"><button class="pi-tool" onclick="piAddRow()">＋ Fila</button>'+
     '<span id="pi-tbl-msg" style="font-size:12px"></span></div>'+
     '<div style="max-height:52vh;overflow:auto"><table class="pi-table"><thead>'+head+'</thead><tbody id="pi-tbody"></tbody></table></div>';
@@ -7366,7 +8201,10 @@ function piFillTable(){
       if(isC&&flags[i]&&flags[i].missing&&(field==='e'||field==='n'))cls.push('bad');
       if(field==='dir'&&badDir)cls.push('bad');
       if(field==='dist'&&badDist)cls.push('bad');
-      return '<td contenteditable class="'+cls.join(' ')+'" data-i="'+i+'" data-f="'+field+'" oninput="piCellEdit(this)">'+piEsc(val)+'</td>';
+      // inputmode: en un teléfono, las celdas numéricas abren el teclado de
+      // cifras en vez del alfabético (el rumbo lleva letras de cuadrante).
+      var modo=(field==='dir')?'text':'decimal';
+      return '<td contenteditable inputmode="'+modo+'" enterkeyhint="next" class="'+cls.join(' ')+'" data-i="'+i+'" data-f="'+field+'" oninput="piCellEdit(this)">'+piEsc(val)+'</td>';
     }
     if(isC){
       var dup=flags[i]&&flags[i].duplicate?' class="dup"':'';
@@ -7901,6 +8739,7 @@ function piRenderAccept(body){
     '<table class="pi-table"><tbody>'+
     '<tr><th>Archivo fuente</th><td>'+piEsc(st.name)+'</td></tr>'+
     '<tr><th>Tipo de extracción</th><td>'+piEsc(st.extractType)+'</td></tr>'+
+    '<tr><th>Lectura del texto</th><td>'+piEsc(st.extractType==='trace'?'trazado del contorno':(st.aiUsed?('IA remota'+(st.aiModel?' · '+st.aiModel:'')):(st.pdfNative?'texto nativo del PDF':(st.ocrText?'OCR local'+(st.ocrSource==='celdas'?' (por celdas)':''):'transcripción manual'))))+'</td></tr>'+
     '<tr><th>CRS original</th><td>'+piEsc(st.extractType==='coords'?st.crs:(st.extractType==='trace'?('trazado sobre cuadrícula '+st.gridCrs):'derrotero local'))+'</td></tr>'+
     '<tr><th>Área</th><td>'+haNow.toFixed(4)+' ha</td></tr>'+
     '<tr><th>Método de ubicación</th><td>'+piEsc(st.locMethod)+(st.located?' <span style="color:#bff0cf">✔ aplicada</span>':' <span style="color:#ffc9c9">✕ no aplicada</span>')+'</td></tr>'+
@@ -7918,7 +8757,11 @@ function piBuildProvenance(){
     origen:'plano',
     archivoFuente:st.name,
     tipoExtraccion:st.extractType,
-    fuenteTexto:st.extractType==='trace'?'trazado-contorno':(st.pdfNative?'pdf-nativo':(st.ocrText?'ocr':'manual')),
+    fuenteTexto:st.extractType==='trace'?'trazado-contorno':(st.aiUsed?'ia-remota':(st.pdfNative?'pdf-nativo':(st.ocrText?'ocr':'manual'))),
+    lecturaIA:!!st.aiUsed,
+    iaModelo:st.aiUsed?st.aiModel:null,
+    iaEnviado:st.aiUsed?'recuadro-marcado':null,
+    ocrReconstruccion:st.ocrSource||null,
     crsOriginal:st.extractType==='coords'?st.crs:(st.extractType==='trace'?('trazado/'+st.gridCrs):'derrotero-local'),
     datosTranscritos:st.rows,
     areaHa:+haNow.toFixed(4),
@@ -7962,9 +8805,146 @@ function piAccept(){
   }catch(e){piToast('No se pudo incorporar el polígono: '+e.message,true,6000);console.error(e);}
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   HOJA DESLIZABLE EN MÓVIL
+   ──────────────────────────────────────────────────────────────────────────
+   En pantalla estrecha, la barra lateral y el mapa se repartían el alto en
+   vertical: con la cabecera (104 px), las pestañas (39 px) y la barra de estado
+   (58 px) fijas, al mapa le quedaban ~183 px en un teléfono de 740 px. Un visor
+   cartográfico con 183 px de mapa no se puede usar.
+
+   La solución es la misma que emplean las aplicaciones de mapas: el panel del
+   módulo se convierte en una HOJA sobre el mapa, con tres alturas —reducida,
+   media y completa—. El mapa ocupa siempre toda la zona disponible y la hoja se
+   arrastra o se toca para cambiar de altura.
+
+   No se oculta ni se elimina nada: todos los controles siguen ahí, y en
+   escritorio el comportamiento es exactamente el de antes (esta función solo
+   actúa por debajo de 900 px).
+   ══════════════════════════════════════════════════════════════════════════ */
+var HOJA={estado:'media',montada:false,arrastrando:false,movido:false,y0:0,h0:0,mq:null};
+
+function hojaEsMovil(){ return HOJA.mq ? HOJA.mq.matches : window.matchMedia('(max-width:900px)').matches; }
+
+/* Coloca el aviso justo encima del borde superior de la hoja. Se calcula desde
+   ese borde y no desde el alto de la hoja, porque `bottom` se mide desde el pie
+   de la ventana y la hoja se apoya sobre la barra de estado, no sobre el pie. */
+function hojaAvisoArriba(altura){
+  var main=document.getElementById('main'); if(!main)return;
+  var r=main.getBoundingClientRect();
+  var bordeHoja=r.bottom-altura;
+  var v=Math.round(window.innerHeight-bordeHoja)+12;
+  var tope=Math.round(window.innerHeight*0.55);   // con la hoja entera abierta, flota sobre ella
+  document.documentElement.style.setProperty('--hoja-aviso',Math.min(v,tope)+'px');
+}
+
+function hojaAplica(estado){
+  var sb=document.getElementById('sidebar'); if(!sb)return;
+  HOJA.estado=estado;
+  sb.classList.remove('hoja-min','hoja-media','hoja-max');
+  sb.classList.add('hoja-'+estado);
+  sb.style.height='';                       // deja mandar a la clase
+  var main=document.getElementById('main'), max=main?main.getBoundingClientRect().height:0;
+  hojaAvisoArriba(estado==='min'?46:(estado==='media'?max*0.55:max));
+  var t=document.getElementById('hoja-tirador');
+  if(t)t.setAttribute('aria-expanded', estado==='min'?'false':'true');
+  // Leaflet necesita saber que su contenedor cambió de tamaño.
+  setTimeout(function(){ try{ if(window.map&&map.invalidateSize)map.invalidateSize(); }catch(e){} },260);
+}
+
+function hojaCicla(){
+  hojaAplica(HOJA.estado==='min'?'media':(HOJA.estado==='media'?'max':'min'));
+}
+
+/* Arrastre vertical del tirador: mientras dura se fija la altura en píxeles (sin
+   transición) y al soltar se ajusta a la altura más cercana de las tres. */
+function hojaArrastre(t){
+  var sb=document.getElementById('sidebar');
+  function y(ev){ var p=(ev.touches&&ev.touches.length)?ev.touches[0]:((ev.changedTouches&&ev.changedTouches.length)?ev.changedTouches[0]:ev); return p.clientY; }
+  function inicio(ev){
+    if(!hojaEsMovil())return;
+    HOJA.arrastrando=true; HOJA.movido=false; HOJA.y0=y(ev); HOJA.h0=sb.getBoundingClientRect().height;
+    sb.classList.add('hoja-arrastrando');
+    if(ev.cancelable)ev.preventDefault();
+  }
+  function mueve(ev){
+    if(!HOJA.arrastrando)return;
+    var main=document.getElementById('main'), max=main.getBoundingClientRect().height;
+    var d=HOJA.y0-y(ev);
+    if(Math.abs(d)>6)HOJA.movido=true;
+    var h=Math.max(46,Math.min(max, HOJA.h0+d));
+    sb.style.height=h+'px'; hojaAvisoArriba(h);
+    if(ev.cancelable)ev.preventDefault();
+  }
+  /* `preventDefault()` en touchstart —necesario para que la página no se
+     desplace al arrastrar— cancela también el `click` sintético del toque. Por
+     eso el toque se resuelve aquí: si el dedo no llegó a recorrer 6 px, no fue
+     un arrastre sino un toque, y se pasa al estado siguiente. */
+  function fin(){
+    if(!HOJA.arrastrando)return;
+    HOJA.arrastrando=false; sb.classList.remove('hoja-arrastrando');
+    if(!HOJA.movido){ sb.style.height=''; hojaCicla(); return; }
+    var main=document.getElementById('main'), max=main.getBoundingClientRect().height;
+    var h=sb.getBoundingClientRect().height;
+    var opciones=[['min',46],['media',max*0.55],['max',max]];
+    var mejor=opciones[0], d=Infinity;
+    opciones.forEach(function(o){ var dd=Math.abs(o[1]-h); if(dd<d){d=dd;mejor=o;} });
+    hojaAplica(mejor[0]);
+  }
+  t.addEventListener('mousedown',inicio);
+  t.addEventListener('touchstart',inicio,{passive:false});
+  window.addEventListener('mousemove',mueve);
+  window.addEventListener('touchmove',mueve,{passive:false});
+  window.addEventListener('mouseup',fin);
+  window.addEventListener('touchend',fin);
+  window.addEventListener('touchcancel',fin);
+}
+
+function hojaMonta(){
+  var sb=document.getElementById('sidebar'); if(!sb||HOJA.montada)return;
+  HOJA.montada=true;
+  var t=document.createElement('button');
+  t.id='hoja-tirador'; t.type='button'; t.className='hoja-tirador';
+  t.setAttribute('aria-controls','sidebar');
+  t.setAttribute('aria-label','Cambiar el tamaño del panel del módulo');
+  t.innerHTML='<span class="hoja-pastilla"></span><span class="hoja-txt"></span>';
+  /* El toque y el arrastre los resuelve hojaArrastre. Aquí solo queda el
+     teclado: al activar el botón con Intro o Espacio el navegador emite un
+     click con detail 0, que no viene de ningún puntero. */
+  t.addEventListener('click',function(ev){ if(ev.detail===0)hojaCicla(); });
+  sb.insertBefore(t,sb.firstChild);
+  hojaArrastre(t);
+  hojaAplica('media');
+}
+
+function hojaDesmonta(){
+  var sb=document.getElementById('sidebar'); if(!sb)return;
+  sb.classList.remove('hoja-min','hoja-media','hoja-max','hoja-arrastrando');
+  sb.style.height='';
+  var t=document.getElementById('hoja-tirador'); if(t)t.remove();
+  document.documentElement.style.removeProperty('--hoja-aviso');
+  HOJA.montada=false;
+  setTimeout(function(){ try{ if(window.map&&map.invalidateSize)map.invalidateSize(); }catch(e){} },60);
+}
+
+function hojaInit(){
+  HOJA.mq=window.matchMedia('(max-width:900px)');
+  function sincroniza(){ if(HOJA.mq.matches)hojaMonta(); else hojaDesmonta(); }
+  if(HOJA.mq.addEventListener)HOJA.mq.addEventListener('change',sincroniza);
+  else if(HOJA.mq.addListener)HOJA.mq.addListener(sincroniza);
+  sincroniza();
+  /* Al cambiar de módulo con la hoja reducida no se vería el panel nuevo: se
+     sube a media para que los controles queden a la vista. */
+  var tabs=document.getElementById('tabs');
+  if(tabs)tabs.addEventListener('click',function(){
+    if(hojaEsMovil()&&HOJA.estado==='min')hojaAplica('media');
+  });
+}
+
 /* ── BOOT ── */
 window.addEventListener('load',async()=>{
   setLS('🌿 Cargando capas…');
+  try{ hojaInit(); }catch(e){ console.error(e); }
   // Descubrir configuración de imágenes aéreas en segundo plano (no bloquea)
   discoverImageryConfig().catch(()=>{});
   try{await loadLayers();toast('✅ Capas de cobertura cargadas');}
