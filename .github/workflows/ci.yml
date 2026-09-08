@@ -31,6 +31,17 @@ jobs:
       - name: Pruebas del núcleo determinista (parsers, geometría, CRS, área CRTM05)
         run: node scripts/plano_import.test.mjs
 
+  worker-ogc:
+    name: Enrutado del Worker de Cloudflare (sin red)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - name: Pruebas del enrutado (/ogc y /ia-plano) del archivo desplegable
+        run: node scripts/worker_router.test.mjs
+
   smoke:
     name: Smoke test del visor (Chromium, CDN real)
     runs-on: ubuntu-latest

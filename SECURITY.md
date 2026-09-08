@@ -50,7 +50,8 @@
   bloqueo de IPs privadas, límites de tamaño/tiempo y no maneja credenciales. El
   endpoint `/ia-plano` del mismo Worker sí custodia una clave de API: tiene lista
   blanca de orígenes, límite de tamaño de imagen y limitador de tasa por IP
-  (código en `docs/worker-ia-plano.js`).
+  (código desplegable en `docs/worker-psforgis-ocg.js`; el módulo suelto, en
+  `docs/worker-ia-plano.js`).
 
 ## Reportar una vulnerabilidad
 
@@ -76,6 +77,8 @@ planos confidenciales.
 
 Este repositorio cubre el visor (`index.html`, `gen_v3.py`, `data/`). El
 Worker proxy se administra en Cloudflare y no forma parte del repo — su código
-de referencia para `/ia-plano` sí se versiona aquí (`docs/worker-ia-plano.js`)
-para que el contrato quede junto al cliente que lo consume; los servicios
-SNIT/Esri/Dirección de Agua y el proveedor de IA son de terceros.
+sí se versiona aquí (`docs/worker-psforgis-ocg.js`, con las rutas `/ogc` e
+`/ia-plano`) para que el contrato quede junto al cliente que lo consume; los
+servicios SNIT/Esri/Dirección de Agua y el proveedor de IA son de terceros.
+La copia de `/ogc` refleja lo desplegado el 20-feb-2026: si se edita el Worker
+desde el panel de Cloudflare, hay que traer el cambio también aquí.

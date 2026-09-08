@@ -56,6 +56,7 @@
  *   simple = { limit = 20, period = 60 }
  */
 
+/*__IA_PLANO_START__*/
 const TIPOS = new Set(['coords', 'rumbo', 'azimut']);
 const FORMATOS = new Set(['image/png', 'image/jpeg']);
 const MAX_B64 = 8 * 1024 * 1024;        // ~6 MB de imagen decodificada
@@ -228,9 +229,19 @@ export async function manejarIaPlano(request, env, ctx) {
     modelo,
   }, 200, h);
 }
+/*__IA_PLANO_END__*/
 
-/* Enrutado. Si el Worker ya tiene su propio `fetch`, basta con enganchar la ruta
-   `/ia-plano` a `manejarIaPlano(request, env, ctx)` y dejar el resto como está. */
+/* ── NO PEGUE ESTE ARCHIVO EN EL WORKER ──────────────────────────────────────
+   El Worker `psforgis-ocg` YA sirve la ruta `/ogc`, de la que el visor toma
+   todas las capas institucionales (SNIT, SIREFOR, SINAC…). Este archivo define
+   únicamente el módulo `/ia-plano`: si se pega tal cual sobre el Worker,
+   `/ogc` desaparece y el mapa se queda sin capas.
+
+   Para desplegar use `docs/worker-psforgis-ocg.js`, que es el Worker COMPLETO
+   —las dos rutas— y se pega de una sola vez.
+
+   El enrutado de abajo existe solo para que este archivo sea válido por sí
+   mismo y se pueda probar aislado con `wrangler dev`. */
 export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);

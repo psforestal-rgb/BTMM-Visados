@@ -160,6 +160,49 @@ def main():
     else:
         ok("Sin rutas hardcodeadas de entorno de análisis")
 
+    print("9) Worker de Cloudflare: el módulo /ia-plano no se ha separado de su copia")
+    # `docs/worker-psforgis-ocg.js` es el archivo que se pega en Cloudflare: lleva
+    # DENTRO una copia del módulo /ia-plano, porque el editor del panel reemplaza
+    # el script entero y pegar solo el módulo borraría la ruta /ogc de la que el
+    # visor toma todas las capas. Dos copias se separan solas con el tiempo; esto
+    # lo impide.
+    def region(rel):
+        txt = leer(rel)
+        ini, fin = "/*__IA_PLANO_START__*/", "/*__IA_PLANO_END__*/"
+        if txt.count(ini) != 1 or txt.count(fin) != 1:
+            return None
+        cuerpo = txt[txt.index(ini) + len(ini):txt.index(fin)]
+        # El módulo se exporta en el archivo suelto y es interno en el combinado.
+        return cuerpo.replace("export async function manejarIaPlano",
+                              "async function manejarIaPlano").strip()
+
+    r_modulo = region("docs/worker-ia-plano.js")
+    r_completo = region("docs/worker-psforgis-ocg.js")
+    if r_modulo is None or r_completo is None:
+        fallo(
+            "Faltan (o están duplicados) los marcadores __IA_PLANO_START__/"
+            "__IA_PLANO_END__ en docs/worker-ia-plano.js o en "
+            "docs/worker-psforgis-ocg.js: sin ellos no se puede comprobar que "
+            "las dos copias del módulo sigan siendo la misma"
+        )
+    elif r_modulo != r_completo:
+        fallo(
+            "El módulo /ia-plano difiere entre docs/worker-ia-plano.js y "
+            "docs/worker-psforgis-ocg.js: quien despliegue el archivo completo "
+            "estaría subiendo una versión distinta de la documentada "
+            "(copiar la región marcada de uno al otro)"
+        )
+    else:
+        ok(f"Módulo /ia-plano idéntico en ambos archivos ({len(r_modulo)} caracteres)")
+    completo = leer("docs/worker-psforgis-ocg.js")
+    if "manejarOgc" not in completo or "ROUTE_PATH" not in completo:
+        fallo(
+            "docs/worker-psforgis-ocg.js ya no conserva la ruta /ogc: pegarlo en "
+            "Cloudflare dejaría al visor sin capas institucionales"
+        )
+    else:
+        ok("El archivo desplegable conserva las dos rutas (/ogc y /ia-plano)")
+
     print()
     if FALLOS:
         print(f"RESULTADO: {len(FALLOS)} fallo(s)")
