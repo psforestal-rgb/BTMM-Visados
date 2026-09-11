@@ -38,11 +38,15 @@
  * variables normales.
  *
  * ── Comprobación después de desplegar ───────────────────────────────────────
- *   curl "https://psforgis-ocg.psforestal.workers.dev/ogc"        → «OGC Proxy OK…»
+ *   curl "https://psforgis-ocg.psforestal.workers.dev/"           → «OGC Proxy OK…»
+ *   curl "https://psforgis-ocg.psforestal.workers.dev/ogc"        → 400 «Missing query parameter "u"»
  *   curl -X POST "https://psforgis-ocg.psforestal.workers.dev/ia-plano" \
- *        -H 'Content-Type: application/json' -d '{}'              → 400 «cuerpo… tipo inválido»
- * Un 400 en la segunda es la respuesta correcta: significa que la ruta existe y
- * está validando la entrada. Un 404 significa que no se desplegó.
+ *        -H 'Content-Type: application/json' -d '{}'              → 400 «tipo inválido»
+ * Ojo con la segunda: el saludo «OGC Proxy OK» lo da el catch-all, NO `/ogc`.
+ * Que `/ogc` conteste 400 es la respuesta correcta —prueba que la ruta está
+ * enganchada al proxy—; si contestara el saludo, el proxy no estaría.
+ * En la tercera, 400 significa que la ruta existe y valida la entrada; 404, que
+ * no se desplegó; 503, que se desplegó pero falta el secreto `IA_API_KEY`.
  *
  * ── Procedencia ─────────────────────────────────────────────────────────────
  * El bloque `/ia-plano` es copia literal de `docs/worker-ia-plano.js` (entre sus

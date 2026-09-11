@@ -181,14 +181,25 @@ Desde el panel de Cloudflare, sin `wrangler`: pegar el archivo en el editor del
 Worker y declarar `IA_API_KEY` en Configuración → Variables como variable
 **cifrada**, más `IA_MODELO` e `IA_ORIGENES` como variables normales.
 
-Comprobación rápida, en dos partes. Primero que no se haya roto nada:
+Comprobación rápida, en tres partes. Primero, que el Worker responde: el
+saludo lo da cualquier ruta que no sea `/ogc` ni `/ia-plano`, no `/ogc`.
 
 ```bash
-curl -s "https://psforgis-ocg.psforestal.workers.dev/ogc"
+curl -s "https://psforgis-ocg.psforestal.workers.dev/"
 # → «OGC Proxy OK. Use /ogc?u=<ENCODED_TARGET_URL>»
 ```
 
-Después, que la ruta nueva exista:
+Segundo, que `/ogc` sigue enganchada al proxy y no al saludo. Sin el parámetro
+`u` el proxy rechaza la petición, y ese rechazo es justamente la prueba de que
+la ruta existe:
+
+```bash
+curl -s "https://psforgis-ocg.psforestal.workers.dev/ogc"
+# → 400 «Missing query parameter "u"»   (correcto: la ruta está enganchada)
+# → «OGC Proxy OK…»                     (MAL: /ogc cayó en el saludo, el proxy no está)
+```
+
+Tercero, que la ruta nueva exista:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' \
