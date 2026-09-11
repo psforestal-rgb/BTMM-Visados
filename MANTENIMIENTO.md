@@ -12,8 +12,11 @@ de datos, variables de entorno ni secretos**; todo el geoproceso corre en el
 navegador. La única pieza de infraestructura propia es el Worker de Cloudflare
 `psforgis-ocg`: la ruta `/ogc` añade CORS y caché a servicios públicos y la ruta
 opcional `/ia-plano` custodia la clave del proveedor de IA para la lectura
-asistida del asistente de planos (código de referencia en
-`docs/worker-ia-plano.js`, detalle en `docs/ia-plano.md`).
+asistida del asistente de planos. El Worker completo, con las dos rutas y listo
+para desplegar, es `docs/worker-psforgis-ocg.js`; `docs/worker-ia-plano.js` es
+la referencia del módulo de IA por separado y **no** debe pegarse solo en
+Cloudflare, porque borraría `/ogc` y el mapa se quedaría sin capas. Detalle en
+`docs/ia-plano.md`.
 
 ## Instalar / ejecutar
 
@@ -30,6 +33,7 @@ No hay instalación. Opciones:
 python3 scripts/check_consistency.py       # invariantes del repo (sin red)
 python3 scripts/check_cdn_integrity.py     # contrato con el CDN (necesita red)
 node scripts/plano_import.test.mjs         # núcleo «Importar predio desde plano» (sin red)
+node scripts/worker_router.test.mjs        # enrutado del Worker de Cloudflare (sin red)
 npm i playwright && npx playwright install chromium
 node scripts/smoke_test.mjs                # E2E: carga, SRI, CSP, análisis
 ```
@@ -39,6 +43,14 @@ node scripts/smoke_test.mjs                # E2E: carga, SRI, CSP, análisis
 rumbo→azimut (W y O como oeste), G/M/S, coma/punto decimal, construcción y error
 de cierre, traslación/rotación sin alterar el área, área CRTM05 de un
 FeatureCollection y clasificación de CRS.
+
+`worker_router.test.mjs` carga `docs/worker-psforgis-ocg.js` —el archivo que se
+pega en Cloudflare— y comprueba sus dos rutas sin salir a la red: que `/ogc`
+sigue rechazando destinos fuera de la lista blanca, IPs privadas y esquemas que
+no sean http/https; que `/ia-plano` valida tipo, formato, tamaño y origen antes
+de llamar a nadie; y que cualquier otra ruta conserva la respuesta que el Worker
+daba antes de añadir la IA. Importa: ese archivo **reemplaza el Worker entero**,
+así que un descuido ahí deja el visor sin capas.
 
 Los tres se ejecutan automáticamente en GitHub Actions (`ci.yml` en cada
 push/PR; `vigilancia-dependencias.yml` cada lunes).

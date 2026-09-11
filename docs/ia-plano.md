@@ -159,15 +159,58 @@ proveedor responde 429, el Worker lo propaga y el visor sugiere el OCR local.
 
 ## 4. Cómo activarlo
 
+> **Cuidado con la ruta que ya existe.** El Worker `psforgis-ocg` sirve hoy
+> `/ogc`, el proxy del que el visor toma **todas** las capas institucionales
+> (SNIT, SIREFOR, SINAC, ArcGIS…). El editor del panel de Cloudflare reemplaza
+> el script **entero**: si se pega solo el módulo de IA, `/ogc` desaparece y el
+> mapa se queda en blanco. Por eso lo que hay que desplegar es
+> **`docs/worker-psforgis-ocg.js`**, que trae las dos rutas juntas y se pega de
+> una sola vez. `docs/worker-ia-plano.js` es la referencia del módulo suelto,
+> no el archivo a desplegar.
+
 1. Obtener una clave en Google AI Studio (nivel gratuito).
-2. En el Worker `psforgis-ocg`, enganchar la ruta `/ia-plano` a
-   `manejarIaPlano()` de `docs/worker-ia-plano.js`.
-3. `wrangler secret put IA_API_KEY`.
+2. Desplegar **`docs/worker-psforgis-ocg.js`** como código del Worker
+   `psforgis-ocg` (contiene `/ogc` sin cambios y `/ia-plano` nuevo).
+3. `wrangler secret put IA_API_KEY` — la clave va siempre como secreto, nunca
+   en el código ni como variable de texto plano.
 4. Declarar en `wrangler.toml` las variables `IA_MODELO` e `IA_ORIGENES` y, muy
    recomendable, el binding `[[ratelimits]]` (ver cabecera del archivo).
 5. `wrangler deploy`.
 
-Comprobación rápida:
+Desde el panel de Cloudflare, sin `wrangler`: pegar el archivo en el editor del
+Worker y declarar `IA_API_KEY` en Configuración → Variables como variable
+**cifrada**, más `IA_MODELO` e `IA_ORIGENES` como variables normales.
+
+Comprobación rápida, en tres partes. Primero, que el Worker responde: el
+saludo lo da cualquier ruta que no sea `/ogc` ni `/ia-plano`, no `/ogc`.
+
+```bash
+curl -s "https://psforgis-ocg.psforestal.workers.dev/"
+# → «OGC Proxy OK. Use /ogc?u=<ENCODED_TARGET_URL>»
+```
+
+Segundo, que `/ogc` sigue enganchada al proxy y no al saludo. Sin el parámetro
+`u` el proxy rechaza la petición, y ese rechazo es justamente la prueba de que
+la ruta existe:
+
+```bash
+curl -s "https://psforgis-ocg.psforestal.workers.dev/ogc"
+# → 400 «Missing query parameter "u"»   (correcto: la ruta está enganchada)
+# → «OGC Proxy OK…»                     (MAL: /ogc cayó en el saludo, el proxy no está)
+```
+
+Tercero, que la ruta nueva exista:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -X POST "https://psforgis-ocg.psforestal.workers.dev/ia-plano" \
+  -H 'Content-Type: application/json' -d '{}'
+# → 400  (la ruta existe y está validando la entrada)
+# → 404  (no se desplegó)
+# → 503  (desplegada, pero falta el secreto IA_API_KEY)
+```
+
+Y por último la lectura real de un recorte:
 
 ```bash
 curl -s -X POST https://psforgis-ocg.psforestal.workers.dev/ia-plano \
@@ -175,6 +218,11 @@ curl -s -X POST https://psforgis-ocg.psforestal.workers.dev/ia-plano \
   -H 'Origin: https://psforestal-rgb.github.io' \
   -d '{"tipo":"coords","formato":"image/png","imagen":"'"$(base64 -w0 recorte.png)"'"}'
 ```
+
+Los dos archivos llevan el módulo `/ia-plano` entre los marcadores
+`__IA_PLANO_START__` y `__IA_PLANO_END__`, y `scripts/check_consistency.py`
+falla si las dos copias dejan de coincidir: así el archivo que se despliega no
+puede quedarse atrás respecto al que está documentado.
 
 Sin desplegar nada, el visor sigue completo: OCR local corregido, texto nativo
 de PDF, trazado de contorno y transcripción manual.
